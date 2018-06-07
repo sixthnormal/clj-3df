@@ -121,7 +121,7 @@
                   [?x :edge ?y]
                   (and [?x :edge ?z]
                        (recur ?z ?y)))]]
-    (is (= {:Project [{:Union [{:Join [{:Recur [2 1]}
+    (is (= {:Project [{:Union [{:Join [{:Rule ["recur" [2 1]]}
                                        {:HasAttr [0 400 2]} 2]}
                                {:HasAttr [0 400 1]} [0 1]]} [0 1]]}
            (df/plan-query db query)))))
@@ -135,7 +135,7 @@
                        (recur ?x ?z)))]]
     (is (= {:Project
             [{:Union
-              [{:Join [{:Recur [0 2]}
+              [{:Join [{:Rule ["recur" [0 2]]}
                        {:HasAttr [2 400 1]} 2]}
                {:HasAttr [0 nil 1]} [0 1]]} [0 1]]}
            (df/plan-query db query)))))

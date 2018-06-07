@@ -42,15 +42,15 @@
         ::entity (s/tuple ::eid ::variable ::variable)
         ::hasattr (s/tuple ::variable keyword? ::variable)
         ::filter (s/tuple ::variable keyword? ::value)
-        ::recur (s/cat :marker #{'recur} :symbols (s/+ ::variable))))
+        ::rule-expr (s/cat :rule-name ::rule-name
+                           :symbols (s/+ ::variable))))
 
 (s/def ::rules (s/and vector? (s/+ ::rule)))
 (s/def ::rule (s/and vector?
                      (s/+ (s/cat :head ::rule-head
                                  :clauses (s/+ ::clause)))))
-(s/def ::rule-head (s/and list?
-                          (s/cat :name (s/and symbol? #(-> % name (str/starts-with? "?") (not)))
-                                 :vars (s/+ ::variable))))
+(s/def ::rule-head (s/and list? (s/cat :name ::rule-name :vars (s/+ ::variable))))
+(s/def ::rule-name (s/and symbol? #(-> % name (str/starts-with? "?") (not))))
 
 (s/def ::eid number?)
 ;; (s/def ::symbol (s/or ::placeholder #{'_}
@@ -217,8 +217,9 @@
     (introduce-simple-relation ctx
                                (Relation. #{sym-e} {:Filter [(resolve ctx sym-e) (attr-id ctx a) (render-value v)]}))))
 
-(defmethod impl ::recur [ctx [_ {:keys [symbols]}]]
-  (introduce-relation ctx (Relation. (set symbols) {:Recur (mapv #(resolve ctx %) symbols)})))
+(defmethod impl ::rule-expr [ctx [_ {:keys [rule-name symbols]}]]
+  (introduce-relation ctx (Relation. (set symbols) {:Rule [(str rule-name)
+                                                           (mapv #(resolve ctx %) symbols)]})))
 
 ;; PUBLIC API
 
