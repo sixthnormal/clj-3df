@@ -17,13 +17,6 @@
 
 ;; TESTS
 
-(deftest test-named
-  (let [query '[:name "named-query"
-                :find ?x ?y
-                :where [?x :edge ?y]]]
-    (is (= {:Project [{:HasAttr [0 400 1]} [0 1]]}
-           (df/plan-query db query)))))
-
 (deftest test-lookup
   (let [query '[:find ?n :where [876 :name ?n]]]
     (is (= {:Project [{:Lookup [876 100 0]} [0]]}
@@ -167,3 +160,8 @@
                {:Filter [0 100 {:String "Mabel"}]} [0]]} [0]]}
            (df/plan-query db query)))))
 
+(deftest test-simple-rule
+  (let [rules '[[(premium? ?user) [?user :user/purchase-amount 1000]]]]
+    (is (= '[[{:head {:name premium?, :vars [?user]},					
+               :clauses [[:clj-3df.core/filter [?user :user/purchase-amount [:number 1000]]]]}]]
+           (df/parse-rules rules)))))

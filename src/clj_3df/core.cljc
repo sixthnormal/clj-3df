@@ -14,22 +14,15 @@
 
 (def separate (juxt filter remove))
 
-(defn- log [ctx message]
-  (println message ctx)
-  ctx)
+(defn- log
+  ([ctx] (log ctx "log:"))
+  ([ctx message]
+   (println message ctx)
+   ctx))
 
 ;; GRAMMAR
 
-(s/def ::eid number?)
-;; (s/def ::symbol (s/or ::placeholder #{'_}
-;;                       ::variable ::variable))
-(s/def ::variable (s/and symbol?
-                         #(-> % name (str/starts-with? "?"))))
-(s/def ::value (s/or :number number?
-                     :string string?))
-
-(s/def ::query (s/cat :name-clause (s/? (s/cat :name-marker #{:name} :name string?))
-                      :find-marker #{:find}
+(s/def ::query (s/cat :find-marker #{:find}
                       :find ::find
                       :where-marker #{:where}
                       :where ::where))
@@ -50,6 +43,22 @@
         ::hasattr (s/tuple ::variable keyword? ::variable)
         ::filter (s/tuple ::variable keyword? ::value)
         ::recur (s/cat :marker #{'recur} :symbols (s/+ ::variable))))
+
+(s/def ::rules (s/and vector? (s/+ ::rule)))
+(s/def ::rule (s/and vector?
+                     (s/+ (s/cat :head ::rule-head
+                                 :clauses (s/+ ::clause)))))
+(s/def ::rule-head (s/and list?
+                          (s/cat :name (s/and symbol? #(-> % name (str/starts-with? "?") (not)))
+                                 :vars (s/+ ::variable))))
+
+(s/def ::eid number?)
+;; (s/def ::symbol (s/or ::placeholder #{'_}
+;;                       ::variable ::variable))
+(s/def ::variable (s/and symbol?
+                         #(-> % name (str/starts-with? "?"))))
+(s/def ::value (s/or :number number?
+                     :string string?))
 
 ;; QUERY PLAN GENERATION
 
@@ -220,10 +229,16 @@
         int->attr (set/map-invert attr->int)]
     (Differential. schema attr->int int->attr 0 nil {})))
 
-(defn parse [query]
+(defn parse-query [query]
   (let [conformed (s/conform ::query query)]
-    (if (= conformed :cljs.spec.alpha/invalid)
+    (if (s/invalid? conformed)
       (throw (ex-info "Couldn't parse query" (s/explain-data ::query query)))
+      conformed)))
+
+(defn parse-rules [rules]
+  (let [conformed (s/conform ::rules rules)]
+    (if (s/invalid? conformed)
+      (throw (ex-info "Couldn't parse rules" (s/explain-data ::rules rules)))
       conformed)))
 
 (defn plan-query [db query]
@@ -232,6 +247,6 @@
                                :rels      #{}
                                :operator  :AND
                                :negate?   false})
-        ir      (parse query)
+        ir      (parse-query query)
         ctx-out (impl ctx-in [::query ir])]
     (-> ctx-out :rels (first) :plan)))
