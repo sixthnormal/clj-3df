@@ -165,3 +165,15 @@
     (is (= '[[{:head {:name premium?, :vars [?user]},					
                :clauses [[:clj-3df.core/filter [?user :user/purchase-amount [:number 1000]]]]}]]
            (df/parse-rules rules)))))
+
+(deftest test-recursive-rule
+  (let [rules '[[(propagate ?x ?y) [?x :node ?y]]
+                [(propagate ?x ?y) [?z :edge ?y] (propagate ?x ?z)]]]
+    (is (= '[[{:head {:name propagate, :vars [?x ?y]},
+					     :clauses [[:clj-3df.core/hasattr [?x :node ?y]]]}]
+					   [{:head {:name propagate, :vars [?x ?y]},
+					     :clauses
+					     [[:clj-3df.core/hasattr [?z :edge ?y]]
+					      [:clj-3df.core/rule-expr
+					       {:rule-name propagate, :symbols [?x ?z]}]]}]]
+           (df/parse-rules rules)))))
