@@ -67,8 +67,9 @@
   (let [query '[:find ?e
                 :where (or [?e :name "Dipper"]
                            [?e :age 12])]]
-    (is (= {:Project [{:Union [{:Filter [0 200 {:Number 12}]}
-                               {:Filter [0 100 {:String "Dipper"}]} [0]]} [0]]}
+    (is (= {:Project [{:Union [[0]
+                               [{:Filter [0 200 {:Number 12}]}
+                                {:Filter [0 100 {:String "Dipper"}]}]]} [0]]}
            (df/plan-query db query)))))
 
 (deftest test-nested-or-and-filter
@@ -78,9 +79,10 @@
                                 [?e :age 12]))]]
     (is (= {:Project
             [{:Union
-              [{:Join [{:Filter [0 200 {:Number 12}]}
-                       {:Filter [0 100 {:String "Mabel"}]} 0]}
-               {:Filter [0 100 {:String "Dipper"}]} [0]]} [0]]}
+              [[0]
+               [{:Join [{:Filter [0 200 {:Number 12}]}
+                        {:Filter [0 100 {:String "Mabel"}]} 0]}
+                {:Filter [0 100 {:String "Dipper"}]}]]} [0]]}
            (df/plan-query db query)))))
 
 (deftest test-or-join
@@ -95,9 +97,10 @@
                                                  :where (or [?x :edge ?y]
                                                             (and [?x :edge ?z] [?z :edge ?y]))]))))
     
-    (is (= {:Project [{:Union [{:Join [{:HasAttr [2 400 1]}
-                                       {:HasAttr [0 400 2]} 2]}
-                               {:HasAttr [0 400 1]} [0 1]]} [0 1]]}
+    (is (= {:Project [{:Union [[0 1]
+                               [{:Join [{:HasAttr [2 400 1]}
+                                        {:HasAttr [0 400 2]} 2]}
+                                {:HasAttr [0 400 1]}]]} [0 1]]}
            (df/plan-query db query)))))
 
 (deftest test-not
@@ -110,8 +113,9 @@
                 :where (or [?e :name "Mabel"]
                            (not [?e :name "Mabel"]))]]
     (is (= {:Project
-            [{:Union [{:Not {:Filter [0 100 {:String "Mabel"}]}}
-                      {:Filter [0 100 {:String "Mabel"}]} [0]]} [0]]}
+            [{:Union [[0]
+                      [{:Not {:Filter [0 100 {:String "Mabel"}]}}
+                       {:Filter [0 100 {:String "Mabel"}]}]]} [0]]}
            (df/plan-query db query)))))
 
 (deftest test-reachability
@@ -121,9 +125,10 @@
                   [?x :edge ?y]
                   (and [?x :edge ?z]
                        (recur ?z ?y)))]]
-    (is (= {:Project [{:Union [{:Join [{:Rule ["recur" [2 1]]}
-                                       {:HasAttr [0 400 2]} 2]}
-                               {:HasAttr [0 400 1]} [0 1]]} [0 1]]}
+    (is (= {:Project [{:Union [[0 1]
+                               [{:Join [{:Rule ["recur" [2 1]]}
+                                        {:HasAttr [0 400 2]} 2]}
+                                {:HasAttr [0 400 1]}]]} [0 1]]}
            (df/plan-query db query)))))
 
 (deftest test-label-propagation
@@ -134,10 +139,10 @@
                   (and [?z :edge ?y]
                        (recur ?x ?z)))]]
     (is (= {:Project
-            [{:Union
-              [{:Join [{:Rule ["recur" [0 2]]}
-                       {:HasAttr [2 400 1]} 2]}
-               {:HasAttr [0 nil 1]} [0 1]]} [0 1]]}
+            [{:Union [[0 1]
+                      [{:Join [{:Rule ["recur" [0 2]]}
+                               {:HasAttr [2 400 1]} 2]}
+                       {:HasAttr [0 nil 1]}]]} [0 1]]}
            (df/plan-query db query)))))
 
 (deftest test-de-morgans
@@ -153,11 +158,11 @@
                            (and [?e :name "Dipper"]
                                 [?e :age 12]))]]
     (is (= {:Project
-            [{:Union
-              [{:Join
-                [{:Filter [0 200 {:Number 12}]}
-                 {:Filter [0 100 {:String "Dipper"}]} 0]}
-               {:Filter [0 100 {:String "Mabel"}]} [0]]} [0]]}
+            [{:Union [[0]
+                      [{:Join
+                        [{:Filter [0 200 {:Number 12}]}
+                         {:Filter [0 100 {:String "Dipper"}]} 0]}
+                       {:Filter [0 100 {:String "Mabel"}]}]]} [0]]}
            (df/plan-query db query)))))
 
 (deftest test-simple-rule
@@ -168,11 +173,8 @@
 (deftest test-recursive-rule
   (let [rules '[[(propagate ?x ?y) [?x :node ?y]]
                 [(propagate ?x ?y) [?z :edge ?y] (propagate ?x ?z)]]]
-    (is (= '[[{:head {:name propagate, :vars [?x ?y]},
-					     :clauses [[:clj-3df.core/hasattr [?x :node ?y]]]}]
-					   [{:head {:name propagate, :vars [?x ?y]},
-					     :clauses
-					     [[:clj-3df.core/hasattr [?z :edge ?y]]
-					      [:clj-3df.core/rule-expr
-					       {:rule-name propagate, :symbols [?x ?z]}]]}]]
-           (df/parse-rules rules)))))
+    (is (= #{(df/->Rule "propagate" {:Union
+                                     [[0 1]
+                                      [{:Join [{:Rule ["propagate" [0 2]]} {:HasAttr [2 400 1]} 2]}
+                                       {:HasAttr [0 nil 1]}]]})}
+           (df/plan-rules db rules)))))

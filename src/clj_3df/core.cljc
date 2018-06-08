@@ -67,6 +67,7 @@
 (defrecord Rule [name plan])
 
 (defn- resolve [ctx sym] (get-in ctx [:syms sym]))
+(defn- resolve-all [ctx syms] (mapv #(resolve ctx %) syms))
 
 (defn- attr-id [ctx a] (get-in ctx [:attr->int a]))
 
@@ -74,6 +75,14 @@
   (case type
     :string {:String v}
     :number {:Number v}))
+
+(defn- extract-relation
+  "Extracts the final remaining relation from a context. Will throw if
+  more than one relation is still present."
+  [ctx]
+  (if (> (count (:rels ctx)) 1)
+    (throw (ex-info "More than one relation present in context." ctx))
+    (first (:rels ctx))))
 
 (defn- negate-ctx [ctx]
   (if (:negate? ctx)
@@ -86,17 +95,22 @@
     (let [last-id (or (some->> (:syms ctx) (vals) (apply max)) -1)]
       (assoc-in ctx [:syms sym] (inc last-id)))))
 
+(defn- shared-symbols [r1 r2]
+  (set/intersection (set (:symbols r1)) (set (:symbols r2))))
+
 (defn- introduce-join
   "Unifies two conflicting relations by equi-joining them."
   [ctx [r1 r2]]
   (when debug?
     (println "Introducing join" (select-keys ctx [:rels :operator])))
-  (let [;; @TODO join on more than one variable
-        join-sym    (first (set/intersection (:symbols r1) (:symbols r2)))
-        result-syms (set/union (:symbols r1) (:symbols r2))
+  (let [shared      (shared-symbols r1 r2)
+        ;; @TODO join on more than one variable
+        join-sym    (first shared)
+        result-syms (concat [join-sym] (remove shared (:symbols r1)) (remove shared (:symbols r2)))
         plan        {:Join [(:plan r1) (:plan r2) (resolve ctx join-sym)]}]
     (update ctx :rels conj (Relation. result-syms plan))))
 
+;; @TODO accept multi-arity unions, once multi-arity join is available
 (defn- introduce-union
   "Unifies two conflicting relations by taking their union."
   ([ctx [r1 r2]]
@@ -112,13 +126,13 @@
   ([ctx symbols [r1 r2]]
    (when debug?
      (println "Introducing union" (select-keys ctx [:rels :operator])))
-   (let [plan {:Union [(:plan r1) (:plan r2) (mapv #(resolve ctx %) symbols)]}]
+   (let [plan {:Union [(resolve-all ctx symbols) [(:plan r1) (:plan r2)]]}]
      (update ctx :rels conj (Relation. symbols plan)))))
 
 (defn- introduce-relation [ctx rel]
   (when debug?
     (println "Introducing" (:plan rel) (select-keys ctx [:rels :operator])))
-  (let [conflict?          (fn [other] (some? (set/intersection (:symbols rel) (:symbols other))))
+  (let [conflict?          (fn [other] (some? (shared-symbols rel other)))
         [conflicting free] (separate conflict? (:rels ctx))
         conflicting-pairs  (map vector (repeat rel) conflicting)
         on-conflict        (case (:operator ctx)
@@ -140,6 +154,9 @@
     (update ctx :syms merge (:syms child))
     (reduce introduce-relation ctx (:rels child))))
 
+(defn- project [ctx rel syms]
+  (Relation. syms {:Project [(:plan rel) (resolve-all ctx syms)]}))
+
 (defmulti impl (fn [ctx query] (first query)))
 
 (defmethod impl ::query [ctx [_ {:keys [find where] :as query}]]
@@ -151,7 +168,7 @@
 
 (defmethod impl ::find-rel [ctx [_ syms]]
   (let [[bound unbound]       (separate (:syms ctx) (map second syms))
-        relevant?             (fn [rel] (some? (set/intersection (:symbols rel) (set bound))))
+        relevant?             (fn [rel] (some? (set/intersection (set (:symbols rel)) (set bound))))
         [relevant irrelevant] (separate relevant? (:rels ctx))]
     (cond
       (seq unbound)          (throw (ex-info "Find spec contains unbound symbols." unbound))
@@ -160,8 +177,7 @@
       :else
       (as-> ctx ctx
         (assoc ctx :rels irrelevant)
-        (update ctx :rels conj (Relation. (set bound)
-                                          {:Project [(:plan (first relevant)) (mapv #(resolve ctx %) bound)]}))))))
+        (update ctx :rels conj (project ctx (first relevant) bound))))))
 
 (defmethod impl ::where [ctx [_ clauses]]
   (reduce impl ctx clauses))
@@ -196,44 +212,49 @@
   (as-> ctx ctx
     (introduce-sym ctx sym-v)
     (introduce-simple-relation ctx
-                               (Relation. #{sym-v} {:Lookup [e (attr-id ctx a) (resolve ctx sym-v)]}))))
+                               (Relation. [sym-v] {:Lookup [e (attr-id ctx a) (resolve ctx sym-v)]}))))
 
 (defmethod impl ::entity [ctx [_ [e sym-a sym-v]]]
   (as-> ctx ctx
     (introduce-sym ctx sym-a)
     (introduce-sym ctx sym-v)
     (introduce-simple-relation ctx
-                               (Relation. #{sym-a sym-v} {:Entity [e (resolve ctx sym-a) (resolve ctx sym-v)]}))))
+                               (Relation. [sym-a sym-v] {:Entity [e (resolve ctx sym-a) (resolve ctx sym-v)]}))))
 
 (defmethod impl ::hasattr [ctx [_ [sym-e a sym-v]]]
   (as-> ctx ctx
     (introduce-sym ctx sym-e)
     (introduce-sym ctx sym-v)
     (introduce-simple-relation ctx
-                               (Relation. #{sym-e sym-v} {:HasAttr [(resolve ctx sym-e) (attr-id ctx a) (resolve ctx sym-v)]}))))
+                               (Relation. [sym-e sym-v] {:HasAttr [(resolve ctx sym-e) (attr-id ctx a) (resolve ctx sym-v)]}))))
 
 (defmethod impl ::filter [ctx [_ [sym-e a v]]]
   (as-> ctx ctx
     (introduce-sym ctx sym-e)
     (introduce-simple-relation ctx
-                               (Relation. #{sym-e} {:Filter [(resolve ctx sym-e) (attr-id ctx a) (render-value v)]}))))
+                               (Relation. [sym-e] {:Filter [(resolve ctx sym-e) (attr-id ctx a) (render-value v)]}))))
 
 (defmethod impl ::rule-expr [ctx [_ {:keys [rule-name symbols]}]]
-  (introduce-relation ctx (Relation. (set symbols) {:Rule [(str rule-name)
-                                                           (mapv #(resolve ctx %) symbols)]})))
+  (introduce-relation ctx (Relation. symbols {:Rule [(str rule-name) (resolve-all ctx symbols)]})))
 
 (defmethod impl ::rules [ctx [_ rules]]
-  (let [rule-head    #(get-in % [0 :head])
-        by-head      (group-by rule-head rules)
-        process-rule (fn [ctx [head definitions]]
-                       (let [rel->rule (fn [rel] (Rule. (str (:name head)) (.-plan rel)))]
+  (let [get-head     #(get-in % [0 :head])
+        get-clauses  #(get-in % [0 :clauses])
+        by-head      (group-by get-head rules)
+        ;; We perform a transformation here, wrapping body clauses
+        ;; with (and) and rule definitions with (or). Note that :Union
+        ;; with a single relation is equivalent to a :Project.
+        process-rule (fn [ctx [head rules]]
+                       (let [rel->rule       (fn [rel] (Rule. (str (:name head)) (.-plan rel)))
+                             wrap-and        (fn [clauses] [::and {:clauses clauses}])
+                             wrapped-clauses (map (comp wrap-and get-clauses) rules)]
                          (as-> ctx ctx
-                           (if (= (count definitions) 1)
-                             ;; single body, no need for wrapping in a union
-                             (impl ctx [::where (get-in definitions [0 0 :clauses])])
-                             ctx)
-                           (impl ctx [::find-rel (mapv (fn [sym] [:var sym]) (:vars head))])
-                           (assoc ctx :rules (->> (:rels ctx) (map rel->rule) (set))))))]
+                           (if (= (count rules) 1)
+                             (let [ctx (impl ctx [::where (get-clauses (first rules))])
+                                   rel (extract-relation ctx)]
+                               (assoc ctx :rels #{(project ctx rel (:vars head))}))
+                             (impl ctx [::or-join {:symbols (:vars head) :clauses wrapped-clauses}]))
+                           (update ctx :rules into (map rel->rule (:rels ctx))))))]
     (reduce process-rule ctx (seq by-head))))
 
 ;; PUBLIC API
@@ -265,7 +286,7 @@
                                :negate?   false})
         ir      (parse-query query)
         ctx-out (impl ctx-in [::query ir])]
-    (-> ctx-out :rels (first) :plan)))
+    (-> ctx-out extract-relation :plan)))
 
 (defn plan-rules [db rules]
   (let [ctx-in  (map->Context {:attr->int (:attr->int db)
