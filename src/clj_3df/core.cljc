@@ -64,6 +64,7 @@
 
 (defrecord Context [attrs syms rels operator negate?])
 (defrecord Relation [symbols plan])
+(defrecord Rule [name plan])
 
 (defn- resolve [ctx sym] (get-in ctx [:syms sym]))
 
@@ -221,6 +222,20 @@
   (introduce-relation ctx (Relation. (set symbols) {:Rule [(str rule-name)
                                                            (mapv #(resolve ctx %) symbols)]})))
 
+(defmethod impl ::rules [ctx [_ rules]]
+  (let [rule-head    #(get-in % [0 :head])
+        by-head      (group-by rule-head rules)
+        process-rule (fn [ctx [head definitions]]
+                       (let [rel->rule (fn [rel] (Rule. (str (:name head)) (.-plan rel)))]
+                         (as-> ctx ctx
+                           (if (= (count definitions) 1)
+                             ;; single body, no need for wrapping in a union
+                             (impl ctx [::where (get-in definitions [0 0 :clauses])])
+                             ctx)
+                           (impl ctx [::find-rel (mapv (fn [sym] [:var sym]) (:vars head))])
+                           (assoc ctx :rules (->> (:rels ctx) (map rel->rule) (set))))))]
+    (reduce process-rule ctx (seq by-head))))
+
 ;; PUBLIC API
 
 (defrecord Differential [schema attr->int int->attr next-tx impl registrations])
@@ -251,3 +266,14 @@
         ir      (parse-query query)
         ctx-out (impl ctx-in [::query ir])]
     (-> ctx-out :rels (first) :plan)))
+
+(defn plan-rules [db rules]
+  (let [ctx-in  (map->Context {:attr->int (:attr->int db)
+                               :syms      {}
+                               :rels      #{}
+                               :rules     #{}
+                               :operator  :AND
+                               :negate?   false})
+        ir      (parse-rules rules)
+        ctx-out (impl ctx-in [::rules ir])]
+    (-> ctx-out :rules)))

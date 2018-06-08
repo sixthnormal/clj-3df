@@ -161,10 +161,9 @@
            (df/plan-query db query)))))
 
 (deftest test-simple-rule
-  (let [rules '[[(premium? ?user) [?user :user/purchase-amount 1000]]]]
-    (is (= '[[{:head {:name premium?, :vars [?user]},					
-               :clauses [[:clj-3df.core/filter [?user :user/purchase-amount [:number 1000]]]]}]]
-           (df/parse-rules rules)))))
+  (let [rules '[[(premium? ?user) [?user :name "P R E M I U M"]]]]
+    (is (= #{(df/->Rule "premium?" {:Project [{:Filter [0 100 {:String "P R E M I U M"}]} [0]]})}
+           (df/plan-rules db rules)))))
 
 (deftest test-recursive-rule
   (let [rules '[[(propagate ?x ?y) [?x :node ?y]]
