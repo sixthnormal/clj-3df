@@ -167,8 +167,10 @@
     (update ctx :syms merge (:syms child))
     (reduce introduce-relation ctx (:rels child))))
 
-(defn- project [ctx rel syms]
-  (Relation. syms {:Project [(:plan rel) (resolve-all ctx syms)]}))
+(defn- project [ctx rel symbols]
+  (if (= (:symbols rel) symbols)
+    rel
+    (Relation. symbols {:Project [(:plan rel) (resolve-all ctx symbols)]})))
 
 (defmulti impl (fn [ctx query] (first query)))
 
