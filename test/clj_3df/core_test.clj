@@ -73,6 +73,18 @@
                                 {:Filter [0 200 {:Number 12}]}]]} [0]]}
            (df/plan-query db query)))))
 
+
+(deftest test-multi-arity-join
+  (let [query '[:find ?e
+                :where (or [?e :name "Dipper"]
+                           [?e :age 12]
+                           [?e :admin? false])]]
+    (is (= {:Project [{:Union [[0]
+                               [{:Filter [0 100 {:String "Dipper"}]}
+                                {:Filter [0 200 {:Number 12}]}
+                                {:Filter [0 500 {:Bool false}]}]]} [0]]}
+           (df/plan-query db query)))))
+
 (deftest test-nested-or-and-filter
   (let [query '[:find ?e
                 :where (or [?e :name "Dipper"]
