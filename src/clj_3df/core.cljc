@@ -58,7 +58,8 @@
 (s/def ::variable (s/and symbol?
                          #(-> % name (str/starts-with? "?"))))
 (s/def ::value (s/or :number number?
-                     :string string?))
+                     :string string?
+                     :bool   boolean?))
 
 ;; QUERY PLAN GENERATION
 
@@ -74,7 +75,8 @@
 (defn- render-value [[type v]]
   (case type
     :string {:String v}
-    :number {:Number v}))
+    :number {:Number v}
+    :bool   {:Bool v}))
 
 (defn- extract-relation
   "Extracts the final remaining relation from a context. Will throw if

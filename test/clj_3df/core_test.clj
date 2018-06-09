@@ -11,7 +11,8 @@
   {:name   {:db/valueType :String}
    :age    {:db/valueType :Number}
    :friend {:db/valueType :Eid}
-   :edge   {:db/valueType :Eid}})
+   :edge   {:db/valueType :Eid}
+   :admin? {:db/valueType :Bool}})
 
 (def db (df/create-db schema))
 
@@ -166,8 +167,8 @@
            (df/plan-query db query)))))
 
 (deftest test-simple-rule
-  (let [rules '[[(premium? ?user) [?user :name "P R E M I U M"]]]]
-    (is (= #{(df/->Rule "premium?" {:Project [{:Filter [0 100 {:String "P R E M I U M"}]} [0]]})}
+  (let [rules '[[(admin? ?user) [?user :admin? true]]]]
+    (is (= #{(df/->Rule "admin?" {:Project [{:Filter [0 500 {:Bool true}]} [0]]})}
            (df/plan-rules db rules)))))
 
 (deftest test-recursive-rule
