@@ -98,9 +98,9 @@
 (defn- shared-symbols [r1 r2]
   (set/intersection (set (:symbols r1)) (set (:symbols r2))))
 
-(defn- introduce-join
+(defn- join
   "Unifies two conflicting relations by equi-joining them."
-  [ctx [r1 r2]]
+  [ctx r1 r2]
   (when debug?
     (println "Introducing join" (select-keys ctx [:rels :operator])))
   (let [shared      (shared-symbols r1 r2)
@@ -108,41 +108,52 @@
         join-sym    (first shared)
         result-syms (concat [join-sym] (remove shared (:symbols r1)) (remove shared (:symbols r2)))
         plan        {:Join [(:plan r1) (:plan r2) (resolve ctx join-sym)]}]
-    (update ctx :rels conj (Relation. result-syms plan))))
+    (Relation. result-syms plan)))
 
-;; @TODO accept multi-arity unions, once multi-arity join is available
-(defn- introduce-union
+(defn- merge-unions [r1 r2]
+  (def test-r1 r1)
+  (def test-r2 r2)
+  (let [[resolved-syms plans] (get-in r1 [:plan :Union])]
+    (Relation. (:symbols r1)
+               {:Union [resolved-syms (conj plans (:plan r2))]})))
+
+(defn- union
   "Unifies two conflicting relations by taking their union."
-  ([ctx [r1 r2]]
+  ([ctx r1 r2]
    (cond
      ;; @TODO make this nicer
-     (contains? ctx :or-join) (introduce-union ctx (:or-join ctx) [r1 r2])
+     (contains? ctx :or-join) (union ctx (:or-join ctx) r1 r2)
      
      (not= (:symbols r1) (:symbols r2))
      (throw (ex-info "Symbols must match inside of an or-clause. Use or-join instead."
                      {:r1-symbols (:symbols r1) :r2-symbols (:symbols r2)}))
 
-     :else (introduce-union ctx (:symbols r1) [r1 r2])))
-  ([ctx symbols [r1 r2]]
+     :else (union ctx (:symbols r1) r1 r2)))
+  ([ctx symbols r1 r2]
    (when debug?
      (println "Introducing union" (select-keys ctx [:rels :operator])))
-   (let [plan {:Union [(resolve-all ctx symbols) [(:plan r1) (:plan r2)]]}]
-     (update ctx :rels conj (Relation. symbols plan)))))
+   (let [resolved-syms  (resolve-all ctx symbols)
+         union?         (fn [rel] (= (get-in rel [:plan :Union 0]) resolved-syms))
+         [r1 r2]        (cond
+                          (and (union? r1) (union? r2)) (throw (ex-info "Shouldn't be unifying two unions." {:r1 r1 :r2 r2}))
+                          (union? r1)                   [r1 r2]
+                          (union? r2)                   [r2 r1]
+                          :else                         [(Relation. symbols {:Union [resolved-syms [(:plan r1)]]}) r2])]
+     (merge-unions r1 r2))))
 
 (defn- introduce-relation [ctx rel]
   (when debug?
     (println "Introducing" (:plan rel) (select-keys ctx [:rels :operator])))
   (let [conflict?          (fn [other] (some? (shared-symbols rel other)))
-        [conflicting free] (separate conflict? (:rels ctx))
-        conflicting-pairs  (map vector (repeat rel) conflicting)
-        on-conflict        (case (:operator ctx)
-                             :AND introduce-join
-                             :OR  introduce-union)]
-    (if (empty? conflicting)
-      (update ctx :rels conj rel)
-      (as-> ctx ctx
-        (assoc ctx :rels free)
-        (reduce on-conflict ctx conflicting-pairs)))))
+        [conflicting free] (separate conflict? (:rels ctx))]
+    ;; there can only ever be at most a single conflict (we should be
+    ;; introducing relations one by one)
+    (cond
+      (empty? conflicting)      (update ctx :rels conj rel)
+      (= (count conflicting) 1) (case (:operator ctx)
+                                  :AND (assoc ctx :rels (conj free (join ctx (first conflicting) rel)))
+                                  :OR  (assoc ctx :rels (conj free (union ctx (first conflicting) rel))))
+      :else                     (throw (ex-info "More than one conflict found" {:ctx ctx :rel rel})))))
 
 (defn- introduce-simple-relation [ctx rel]
   (if (:negate? ctx)
@@ -235,7 +246,7 @@
                                (Relation. [sym-e] {:Filter [(resolve ctx sym-e) (attr-id ctx a) (render-value v)]}))))
 
 (defmethod impl ::rule-expr [ctx [_ {:keys [rule-name symbols]}]]
-  (introduce-relation ctx (Relation. symbols {:Rule [(str rule-name) (resolve-all ctx symbols)]})))
+  (introduce-relation ctx (Relation. symbols {:RuleExpr [(str rule-name) (resolve-all ctx symbols)]})))
 
 (defmethod impl ::rules [ctx [_ rules]]
   (let [get-head     #(get-in % [0 :head])

@@ -44,23 +44,23 @@
     (testing "error is thrown on unbound symbols in a find-clause"
       (is (thrown? Exception (df/plan-query db '[:find ?unbound :where [?bound :name "Dipper"]]))))
     
-    (is (= {:Project [{:Join [{:HasAttr [2 100 1]}
-                              {:HasAttr [0 100 1]} 1]} [0 1 2]]}
+    (is (= {:Project [{:Join [{:HasAttr [0 100 1]}
+                              {:HasAttr [2 100 1]} 1]} [0 1 2]]}
            (df/plan-query db query)))))
 
 (deftest test-simple-join
   (let [query '[:find ?e ?n ?a
                 :where [?e :name ?n] [?e :age ?a]]]
-    (is (= {:Project [{:Join [{:HasAttr [0 200 2]}
-                              {:HasAttr [0 100 1]} 0]} [0 1 2]]}
+    (is (= {:Project [{:Join [{:HasAttr [0 100 1]}
+                              {:HasAttr [0 200 2]} 0]} [0 1 2]]}
            (df/plan-query db query)))))
 
 (deftest test-nested-join
   (let [query '[:find ?e1 ?n1 ?e2 ?n2
                 :where [?e1 :name ?n1] [?e1 :friend ?e2] [?e2 :name ?n2]]]
-    (is (= {:Project [{:Join [{:HasAttr [2 100 3]}
-                              {:Join [{:HasAttr [0 300 2]}
-                                      {:HasAttr [0 100 1]} 0]} 2]} [0 1 2 3]]}
+    (is (= {:Project [{:Join [{:Join [{:HasAttr [0 100 1]}
+                                      {:HasAttr [0 300 2]} 0]}
+                              {:HasAttr [2 100 3]} 2]} [0 1 2 3]]}
            (df/plan-query db query)))))
 
 (deftest test-simple-or
@@ -68,8 +68,8 @@
                 :where (or [?e :name "Dipper"]
                            [?e :age 12])]]
     (is (= {:Project [{:Union [[0]
-                               [{:Filter [0 200 {:Number 12}]}
-                                {:Filter [0 100 {:String "Dipper"}]}]]} [0]]}
+                               [{:Filter [0 100 {:String "Dipper"}]}
+                                {:Filter [0 200 {:Number 12}]}]]} [0]]}
            (df/plan-query db query)))))
 
 (deftest test-nested-or-and-filter
@@ -80,9 +80,9 @@
     (is (= {:Project
             [{:Union
               [[0]
-               [{:Join [{:Filter [0 200 {:Number 12}]}
-                        {:Filter [0 100 {:String "Mabel"}]} 0]}
-                {:Filter [0 100 {:String "Dipper"}]}]]} [0]]}
+               [{:Filter [0 100 {:String "Dipper"}]}
+                {:Join [{:Filter [0 100 {:String "Mabel"}]}
+                        {:Filter [0 200 {:Number 12}]} 0]}]]} [0]]}
            (df/plan-query db query)))))
 
 (deftest test-or-join
@@ -98,9 +98,9 @@
                                                             (and [?x :edge ?z] [?z :edge ?y]))]))))
     
     (is (= {:Project [{:Union [[0 1]
-                               [{:Join [{:HasAttr [2 400 1]}
-                                        {:HasAttr [0 400 2]} 2]}
-                                {:HasAttr [0 400 1]}]]} [0 1]]}
+                               [{:HasAttr [0 400 1]}
+                                {:Join [{:HasAttr [0 400 2]}
+                                        {:HasAttr [2 400 1]} 2]}]]} [0 1]]}
            (df/plan-query db query)))))
 
 (deftest test-not
@@ -114,8 +114,8 @@
                            (not [?e :name "Mabel"]))]]
     (is (= {:Project
             [{:Union [[0]
-                      [{:Not {:Filter [0 100 {:String "Mabel"}]}}
-                       {:Filter [0 100 {:String "Mabel"}]}]]} [0]]}
+                      [{:Filter [0 100 {:String "Mabel"}]}
+                       {:Not {:Filter [0 100 {:String "Mabel"}]}}]]} [0]]}
            (df/plan-query db query)))))
 
 (deftest test-reachability
@@ -126,9 +126,9 @@
                   (and [?x :edge ?z]
                        (recur ?z ?y)))]]
     (is (= {:Project [{:Union [[0 1]
-                               [{:Join [{:Rule ["recur" [2 1]]}
-                                        {:HasAttr [0 400 2]} 2]}
-                                {:HasAttr [0 400 1]}]]} [0 1]]}
+                               [{:HasAttr [0 400 1]}
+                                {:Join [{:HasAttr [0 400 2]}
+                                        {:RuleExpr ["recur" [2 1]]} 2]}]]} [0 1]]}
            (df/plan-query db query)))))
 
 (deftest test-label-propagation
@@ -140,9 +140,9 @@
                        (recur ?x ?z)))]]
     (is (= {:Project
             [{:Union [[0 1]
-                      [{:Join [{:Rule ["recur" [0 2]]}
-                               {:HasAttr [2 400 1]} 2]}
-                       {:HasAttr [0 nil 1]}]]} [0 1]]}
+                      [{:HasAttr [0 nil 1]}
+                       {:Join [{:HasAttr [2 400 1]}
+                               {:RuleExpr ["recur" [0 2]]} 2]}]]} [0 1]]}
            (df/plan-query db query)))))
 
 (deftest test-de-morgans
@@ -159,10 +159,10 @@
                                 [?e :age 12]))]]
     (is (= {:Project
             [{:Union [[0]
-                      [{:Join
-                        [{:Filter [0 200 {:Number 12}]}
-                         {:Filter [0 100 {:String "Dipper"}]} 0]}
-                       {:Filter [0 100 {:String "Mabel"}]}]]} [0]]}
+                      [{:Filter [0 100 {:String "Mabel"}]}
+                       {:Join
+                        [{:Filter [0 100 {:String "Dipper"}]}
+                         {:Filter [0 200 {:Number 12}]} 0]}]]} [0]]}
            (df/plan-query db query)))))
 
 (deftest test-simple-rule
@@ -175,6 +175,21 @@
                 [(propagate ?x ?y) [?z :edge ?y] (propagate ?x ?z)]]]
     (is (= #{(df/->Rule "propagate" {:Union
                                      [[0 1]
-                                      [{:Join [{:Rule ["propagate" [0 2]]} {:HasAttr [2 400 1]} 2]}
-                                       {:HasAttr [0 nil 1]}]]})}
+                                      [{:HasAttr [0 nil 1]}
+                                       {:Join [{:HasAttr [2 400 1]}
+                                               {:RuleExpr ["propagate" [0 2]]} 2]}]]})}
+           (df/plan-rules db rules)))))
+
+(deftest test-many-rule-bodies
+  (let [rules '[[(subtype ?t1 ?t2) [?t2 :name "Object"]]
+                [(subtype ?t1 ?t2) [?t1 :name ?n] [?t2 :name ?n]]
+                [(subtype ?t1 ?t2) [?t1 :extends ?t2]]
+                [(subtype ?t1 ?t2) [?t1 :extends ?any] (subtype ?any ?t2)]]]
+    (is (= #{(df/->Rule "subtype" {:Union
+                                   [[1 0]
+                                    [{:Filter [0 100 {:String "Object"}]}
+                                     {:Join [{:HasAttr [1 100 2]} {:HasAttr [0 100 2]} 2]}
+                                     {:HasAttr [1 nil 0]}
+                                     {:Join
+                                      [{:HasAttr [1 nil 3]} {:RuleExpr ["subtype" [3 0]]} 3]}]]})}
            (df/plan-rules db rules)))))
