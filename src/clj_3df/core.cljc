@@ -20,6 +20,20 @@
         int->attr (set/map-invert attr->int)]
     (Differential. schema attr->int int->attr 0 nil {})))
 
+(defn register-query [db name query]
+  {:Register {:query_name name
+              :plan       (plan-query db query)
+              :rules      []}})
+
+(defn register-query! [conn db name query]
+  (->> (register-query db name query) (json/generate-string) (stream/put! conn)))
+
+(defn transact [tx-data]
+  {:Transact {:tx_data tx-data}})
+
+(defn transact! [conn tx-data]
+  (->> (transact tx-data) (json/generate-string) (stream/put! conn)))
+
 (def conn @(http/websocket-client "ws://127.0.0.1:6262"))
 
 (def subscriber
@@ -37,11 +51,17 @@
 (comment
   (.start subscriber)
   (.getState subscriber)
-  (->> {:Register {:query_name "test"
-                   :plan       {:Filter [0, 100, {:String "Mabel"}]}
-                   :rules      []}}
-       (json/generate-string)
-       (stream/put! conn))
-  (->> {:Transact {:tx_data [[1, 1, 100, {:String "Dipper"}], [1, 2, 100, {:String "Mabel"}]]}}
-       (json/generate-string)
-       (stream/put! conn)))
+
+  (def schema
+    {:name   {:db/valueType :String}
+     :age    {:db/valueType :Number}
+     :friend {:db/valueType :Eid}
+     :edge   {:db/valueType :Eid}
+     :admin? {:db/valueType :Bool}})
+
+  (def db (create-db schema))
+
+  (register-query! conn db "test" '[:find ?e :where [?e :name "Mabel"]])
+
+  (transact! conn [[1, 1, 100, {:String "Dipper"}],
+                   [1, 2, 100, {:String "Mabel"}]]))
