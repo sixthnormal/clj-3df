@@ -1,7 +1,8 @@
 (ns clj-3df.core-test
   (:require
    [clojure.test :refer [deftest is testing run-tests]]
-   [clj-3df.core :as df]))
+   [clj-3df.core :as df]
+   [clj-3df.parser :as parser]))
 
 ;; CONFIGURATION
 
@@ -174,17 +175,17 @@
 
 (deftest test-simple-rule
   (let [rules '[[(admin? ?user) [?user :admin? true]]]]
-    (is (= #{(df/->Rule "admin?" {:Filter [0 500 {:Bool true}]})}
+    (is (= #{(parser/->Rule "admin?" {:Filter [0 500 {:Bool true}]})}
            (df/plan-rules db rules)))))
 
 (deftest test-recursive-rule
   (let [rules '[[(propagate ?x ?y) [?x :node ?y]]
                 [(propagate ?x ?y) [?z :edge ?y] (propagate ?x ?z)]]]
-    (is (= #{(df/->Rule "propagate" {:Union
-                                     [[0 1]
-                                      [{:HasAttr [0 nil 1]}
-                                       {:Join [{:HasAttr [2 400 1]}
-                                               {:RuleExpr ["propagate" [0 2]]} 2]}]]})}
+    (is (= #{(parser/->Rule "propagate" {:Union
+                                         [[0 1]
+                                          [{:HasAttr [0 nil 1]}
+                                           {:Join [{:HasAttr [2 400 1]}
+                                                   {:RuleExpr ["propagate" [0 2]]} 2]}]]})}
            (df/plan-rules db rules)))))
 
 (deftest test-many-rule-bodies
@@ -192,11 +193,11 @@
                 [(subtype ?t1 ?t2) [?t1 :name ?n] [?t2 :name ?n]]
                 [(subtype ?t1 ?t2) [?t1 :extends ?t2]]
                 [(subtype ?t1 ?t2) [?t1 :extends ?any] (subtype ?any ?t2)]]]
-    (is (= #{(df/->Rule "subtype" {:Union
-                                   [[1 0]
-                                    [{:Filter [0 100 {:String "Object"}]}
-                                     {:Join [{:HasAttr [1 100 2]} {:HasAttr [0 100 2]} 2]}
-                                     {:HasAttr [1 nil 0]}
-                                     {:Join
-                                      [{:HasAttr [1 nil 3]} {:RuleExpr ["subtype" [3 0]]} 3]}]]})}
+    (is (= #{(parser/->Rule "subtype" {:Union
+                                       [[1 0]
+                                        [{:Filter [0 100 {:String "Object"}]}
+                                         {:Join [{:HasAttr [1 100 2]} {:HasAttr [0 100 2]} 2]}
+                                         {:HasAttr [1 nil 0]}
+                                         {:Join
+                                          [{:HasAttr [1 nil 3]} {:RuleExpr ["subtype" [3 0]]} 3]}]]})}
            (df/plan-rules db rules)))))
