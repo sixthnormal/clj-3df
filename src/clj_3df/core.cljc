@@ -5,6 +5,8 @@
    [clojure.set :as set]
    #?(:clj [clojure.spec.alpha :as s]
       :cljs [cljs.spec.alpha :as s])
+   [aleph.http :as http]
+   [manifold.stream :as stream]
    [clj-3df.parser :as parser]))
 
 (def ^{:arglists '([db query])} plan-query parser/plan-query)
@@ -17,3 +19,21 @@
         int->attr (set/map-invert attr->int)]
     (Differential. schema attr->int int->attr 0 nil {})))
 
+(def conn @(http/websocket-client "ws://127.0.0.1:6262"))
+
+(def subscriber
+  (Thread.
+   (fn []
+     (loop []
+       (when-let [result @(stream/take! conn ::drained)]
+         (if (= result ::drained)
+           (println "[SUBSCRIBER] server closed connection")
+           (do
+             (println result)
+             (recur))))))))
+
+(comment
+  (.start subscriber)
+  (.getState subscriber)
+  (stream/put! conn "register?test?{\"Filter\": [0, 100, {\"String\": \"Mabel\"}]}?[]")
+  (stream/put! conn "transact?[[1, 1, 100, {\"String\": \"Dipper\"}], [1, 2, 100, {\"String\": \"Mabel\"}]]"))
