@@ -12,7 +12,7 @@
 
 ;; UTIL
 
-(def separate (juxt filter remove))
+(def ^{:arglists '([pred] [pred coll])} separate (juxt filter remove))
 
 (defn- log
   ([ctx] (log ctx "log:"))
