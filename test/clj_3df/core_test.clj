@@ -201,3 +201,13 @@
                                          {:Join
                                           [{:HasAttr [1 nil 3]} {:RuleExpr ["subtype" [3 0]]} 3]}]]})}
            (df/plan-rules db rules)))))
+
+(deftest test-predicates
+  (let [query '[:find ?user ?age
+                :in ?max-age
+                :where
+                [?user :age ?age]
+                [(< ?age ?max-age)]]]
+    (is (= {:Project
+            [{:Join [{:HasAttr [1 200 2]} {:PredExpr ["<" [2 0]]} 2]} [1 2]]}
+           (df/plan-query db query)))))

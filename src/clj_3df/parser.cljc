@@ -42,7 +42,11 @@
         ::entity (s/tuple ::eid ::variable ::variable)
         ::hasattr (s/tuple ::variable keyword? ::variable)
         ::filter (s/tuple ::variable keyword? ::value)
+        ::pred-expr (s/tuple (s/cat :predicate ::predicate
+                                    ;; @TODO should be (s/or :var :const) eventually
+                                    :fn-args (s/+ ::variable)))
         ::rule-expr (s/cat :rule-name ::rule-name
+                           ;; @TODO should be (s/or :var :const) eventually
                            :symbols (s/+ ::variable))))
 
 (s/def ::rules (s/and vector? (s/+ ::rule)))
@@ -60,14 +64,19 @@
 (s/def ::value (s/or :number number?
                      :string string?
                      :bool   boolean?))
+(s/def ::predicate '#{<= < > >= =})
 
 ;; QUERY PLAN GENERATION
 
-(defrecord Context [attrs syms rels operator negate?])
+(defrecord Context [in attrs syms rels operator negate?])
 (defrecord Relation [symbols plan])
 (defrecord Rule [name plan])
 
-(defn- resolve [ctx sym] (get-in ctx [:syms sym]))
+(defn- resolve [ctx sym]
+  (if-let [pair (find (:syms ctx) sym)]
+    (val pair)
+    (throw (ex-info "Unknown symbol." {:ctx ctx :sym sym}))))
+
 (defn- resolve-all [ctx syms] (mapv #(resolve ctx %) syms))
 
 (defn- attr-id [ctx a] (get-in ctx [:attr->int a]))
@@ -96,6 +105,13 @@
     ctx
     (let [last-id (or (some->> (:syms ctx) (vals) (apply max)) -1)]
       (assoc-in ctx [:syms sym] (inc last-id)))))
+
+(defn- introduce-input
+  ([ctx sym] (introduce-sym ctx sym))
+  ([ctx sym v]
+   (-> ctx
+       (introduce-sym sym)
+       (update :in assoc name v))))
 
 (defn- shared-symbols [r1 r2]
   (set/intersection (set (:symbols r1)) (set (:symbols r2))))
@@ -174,8 +190,9 @@
 
 (defmulti impl (fn [ctx query] (first query)))
 
-(defmethod impl ::query [ctx [_ {:keys [find where] :as query}]]
+(defmethod impl ::query [ctx [_ {:keys [find in where] :or {in []} :as query}]]
   (-> ctx
+      (impl [::in in])
       (impl [::where where])
       (impl [::find find])))
 
@@ -193,6 +210,9 @@
       (as-> ctx ctx
         (assoc ctx :rels irrelevant)
         (update ctx :rels conj (project ctx (first relevant) bound))))))
+
+(defmethod impl ::in [ctx [_ inputs]]
+  (reduce introduce-input ctx inputs))
 
 (defmethod impl ::where [ctx [_ clauses]]
   (reduce impl ctx clauses))
@@ -249,6 +269,9 @@
     (introduce-simple-relation ctx
                                (Relation. [sym-e] {:Filter [(resolve ctx sym-e) (attr-id ctx a) (render-value v)]}))))
 
+(defmethod impl ::pred-expr [ctx [_ [{:keys [predicate fn-args]}]]]
+  (introduce-relation ctx (Relation. fn-args {:PredExpr [(name predicate) (resolve-all ctx fn-args)]})))
+
 (defmethod impl ::rule-expr [ctx [_ {:keys [rule-name symbols]}]]
   (introduce-relation ctx (Relation. symbols {:RuleExpr [(str rule-name) (resolve-all ctx symbols)]})))
 
@@ -290,7 +313,8 @@
       conformed)))
 
 (defn plan-query [db query]
-  (let [ctx-in  (map->Context {:attr->int (:attr->int db)
+  (let [ctx-in  (map->Context {:in        {}
+                               :attr->int (:attr->int db)
                                :syms      {}
                                :rels      #{}
                                :operator  :AND
@@ -306,7 +330,8 @@
       conformed)))
 
 (defn plan-rules [db rules]
-  (let [ctx-in  (map->Context {:attr->int (:attr->int db)
+  (let [ctx-in  (map->Context {:in        {}
+                               :attr->int (:attr->int db)
                                :syms      {}
                                :rels      #{}
                                :rules     #{}
