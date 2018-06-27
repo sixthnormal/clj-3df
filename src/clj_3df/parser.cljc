@@ -22,14 +22,14 @@
 
 ;; GRAMMAR
 
-(s/def ::query (s/cat :find-marker #{:find}
-                      :find ::find
-                      :where-marker #{:where}
-                      :where ::where))
+(s/def ::query (s/keys :req-un [::find ::where]
+                       :opt-un [::in]))
 
 (s/def ::find (s/alt ::find-rel ::find-rel))
 (s/def ::find-rel (s/+ ::find-elem))
 (s/def ::find-elem (s/or :var ::variable))
+
+(s/def ::in (s/+ ::variable))
 
 (s/def ::where (s/+ ::clause))
 
@@ -274,8 +274,17 @@
 
 ;; PUBLIC API
 
+(defn query->map [query]
+  (loop [parsed {}, key nil, qs query]
+    (if-let [q (first qs)]
+      (if (keyword? q)
+        (recur parsed q (next qs))
+        (recur (update-in parsed [key] (fnil conj []) q) key (next qs)))
+      parsed)))
+
 (defn parse-query [query]
-  (let [conformed (s/conform ::query query)]
+  (let [query     (if (sequential? query) (query->map query) query)
+        conformed (s/conform ::query query)]
     (if (s/invalid? conformed)
       (throw (ex-info "Couldn't parse query" (s/explain-data ::query query)))
       conformed)))
