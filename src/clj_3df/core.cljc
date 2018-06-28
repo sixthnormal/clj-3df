@@ -10,7 +10,7 @@
    [cheshire.core :as json]
    [clj-3df.parser :as parser]))
 
-(def ^{:arglists '([db query])} plan-query parser/plan-query)
+(def ^{:arglists '([db query])} compile-query parser/compile-query)
 (def ^{:arglists '([db rules])} plan-rules parser/plan-rules)
 
 (defprotocol IDB
@@ -57,9 +57,11 @@
     (Differential. schema (rschema schema) attr->int int->attr 0 nil {})))
 
 (defn register-query [db name query]
-  {:Register {:query_name name
-              :plan       (plan-query db query)
-              :rules      []}})
+  (let [compiled (compile-query db query)]
+    {:Register {:query_name name
+                :plan       (.-plan compiled)
+                :in         (.-in compiled)
+                :rules      []}}))
 
 (defn register-query! [conn db name query]
   (->> (register-query db name query) (json/generate-string) (stream/put! conn)))

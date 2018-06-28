@@ -19,44 +19,51 @@
 
 (def db (df/create-db schema))
 
+;; HELPER
+
+(defn- plan-query
+  "Helper to keep plan-only tests focused."
+  [db query]
+  (.-plan (parser/compile-query db query)))
+
 ;; TESTS
 
 (deftest test-lookup
   (let [query '[:find ?n :where [876 :name ?n]]]
     (is (= {:Lookup [876 100 0]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-entity
   (let [query '[:find ?a ?v :where [429 ?a ?v]]]
     (is (= {:Entity [429 0 1]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-hasattr
   (let [query '[:find ?e ?v :where [?e :name ?v]]]
     (is (= {:HasAttr [0 100 1]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-filter
   (let [query '[:find ?e :where [?e :name "Dipper"]]]
     (is (= {:Filter [0 100 {:String "Dipper"}]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-find-clause
   (let [query '[:find ?e1 ?n ?e2
                 :where [?e1 :name ?n] [?e2 :name ?n]]]
 
     (testing "error is thrown on unbound symbols in a find-clause"
-      (is (thrown? Exception (df/plan-query db '[:find ?unbound :where [?bound :name "Dipper"]]))))
+      (is (thrown? Exception (plan-query db '[:find ?unbound :where [?bound :name "Dipper"]]))))
     
     (is (= {:Project [{:Join [{:HasAttr [0 100 1]}
                               {:HasAttr [2 100 1]} 1]} [0 1 2]]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-simple-join
   (let [query '[:find ?e ?n ?a
                 :where [?e :name ?n] [?e :age ?a]]]
     (is (= {:Join [{:HasAttr [0 100 1]} {:HasAttr [0 200 2]} 0]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-nested-join
   (let [query '[:find ?e1 ?n1 ?e2 ?n2
@@ -64,7 +71,7 @@
     (is (= {:Project [{:Join [{:Join [{:HasAttr [0 100 1]}
                                       {:HasAttr [0 300 2]} 0]}
                               {:HasAttr [2 100 3]} 2]} [0 1 2 3]]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-simple-or
   (let [query '[:find ?e
@@ -73,7 +80,7 @@
     (is (= {:Union [[0]
                     [{:Filter [0 100 {:String "Dipper"}]}
                      {:Filter [0 200 {:Number 12}]}]]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-multi-arity-join
   (let [query '[:find ?e
@@ -84,7 +91,7 @@
                     [{:Filter [0 100 {:String "Dipper"}]}
                      {:Filter [0 200 {:Number 12}]}
                      {:Filter [0 500 {:Bool false}]}]]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-nested-or-and-filter
   (let [query '[:find ?e
@@ -96,7 +103,7 @@
              [{:Filter [0 100 {:String "Dipper"}]}
               {:Join [{:Filter [0 100 {:String "Mabel"}]}
                       {:Filter [0 200 {:Number 12}]} 0]}]]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-or-join
   (let [query '[:find ?x ?y
@@ -106,20 +113,20 @@
                               [?z :edge ?y]))]]
 
     (testing "plain or not allowed if symbols don't match everywhere"
-      (is (thrown? Exception (df/plan-query db '[:find ?x ?y
-                                                 :where (or [?x :edge ?y]
-                                                            (and [?x :edge ?z] [?z :edge ?y]))]))))
+      (is (thrown? Exception (plan-query db '[:find ?x ?y
+                                              :where (or [?x :edge ?y]
+                                                         (and [?x :edge ?z] [?z :edge ?y]))]))))
     
     (is (= {:Union [[0 1]
                     [{:HasAttr [0 400 1]}
                      {:Join [{:HasAttr [0 400 2]}
                              {:HasAttr [2 400 1]} 2]}]]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-not
   (let [query '[:find ?e :where (not [?e :name "Mabel"])]]
     (is (= {:Not {:Filter [0 100 {:String "Mabel"}]}}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-tricky-not
   (let [query '[:find ?e
@@ -128,7 +135,7 @@
     (is (= {:Union [[0]
                     [{:Filter [0 100 {:String "Mabel"}]}
                      {:Not {:Filter [0 100 {:String "Mabel"}]}}]]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-reachability
   (let [query '[:find ?x ?y
@@ -141,7 +148,7 @@
                     [{:HasAttr [0 400 1]}
                      {:Join [{:HasAttr [0 400 2]}
                              {:RuleExpr ["recur" [2 1]]} 2]}]]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-label-propagation
   (let [query '[:find ?x ?y
@@ -154,14 +161,14 @@
                     [{:HasAttr [0 600 1]}
                      {:Join [{:HasAttr [2 400 1]}
                              {:RuleExpr ["recur" [0 2]]} 2]}]]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-de-morgans
-  (is (= (df/plan-query db '[:find ?e :where (or (not [?e :name "Dipper"]) (not [?e :age 12]))])
-         (df/plan-query db '[:find ?e :where (not (and [?e :name "Dipper"] [?e :age 12]))])))
+  (is (= (plan-query db '[:find ?e :where (or (not [?e :name "Dipper"]) (not [?e :age 12]))])
+         (plan-query db '[:find ?e :where (not (and [?e :name "Dipper"] [?e :age 12]))])))
 
-  (is (= (df/plan-query db '[:find ?e :where (and (not [?e :name "Dipper"]) (not [?e :name "Mabel"]))])
-         (df/plan-query db '[:find ?e :where (not (or [?e :name "Dipper"] [?e :name "Mabel"]))]))))
+  (is (= (plan-query db '[:find ?e :where (and (not [?e :name "Dipper"]) (not [?e :name "Mabel"]))])
+         (plan-query db '[:find ?e :where (not (or [?e :name "Dipper"] [?e :name "Mabel"]))]))))
 
 (deftest test-nested-and-or
   (let [query '[:find ?e
@@ -173,7 +180,7 @@
                      {:Join
                       [{:Filter [0 100 {:String "Dipper"}]}
                        {:Filter [0 200 {:Number 12}]} 0]}]]}
-           (df/plan-query db query)))))
+           (plan-query db query)))))
 
 (deftest test-simple-rule
   (let [rules '[[(admin? ?user) [?user :admin? true]]]]
@@ -205,11 +212,14 @@
            (df/plan-rules db rules)))))
 
 (deftest test-predicates
-  (let [query '[:find ?user ?age
-                :in ?max-age
-                :where
-                [?user :age ?age]
-                [(< ?age ?max-age)]]]
+  (let [query    '[:find ?user ?age
+                   :in ?max-age
+                   :where
+                   [?user :age ?age]
+                   [(< ?age ?max-age)]]
+        compiled (parser/compile-query db query)]
     (is (= {:Project					
             [{:Join [{:HasAttr [1 200 2]} {:PredExpr ["<" [2 0]]} 2]} [1 2]]}
-           (df/plan-query db query)))))
+           (.-plan compiled)))
+    
+    (is (= {'?max-age 0} (.-in compiled)))))

@@ -311,7 +311,9 @@
       (throw (ex-info "Couldn't parse query" (s/explain-data ::query query)))
       conformed)))
 
-(defn plan-query [db query]
+(defrecord CompiledQuery [plan in])
+
+(defn compile-query [db query]
   (let [ctx-in  (map->Context {:in        {}
                                :attr->int (:attr->int db)
                                :syms      {}
@@ -319,8 +321,9 @@
                                :operator  :AND
                                :negate?   false})
         ir      (parse-query query)
-        ctx-out (impl ctx-in [::query ir])]
-    (-> ctx-out extract-relation :plan)))
+        ctx-out (impl ctx-in [::query ir])
+        plan    (-> ctx-out extract-relation :plan)]
+    (CompiledQuery. plan (:in ctx-out))))
 
 (defn parse-rules [rules]
   (let [conformed (s/conform ::rules rules)]
