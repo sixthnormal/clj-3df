@@ -106,13 +106,6 @@
     (let [last-id (or (some->> (:syms ctx) (vals) (apply max)) -1)]
       (assoc-in ctx [:syms sym] (inc last-id)))))
 
-(defn- introduce-input
-  ([ctx sym] (introduce-sym ctx sym))
-  ([ctx sym v]
-   (-> ctx
-       (introduce-sym sym)
-       (update :in assoc name v))))
-
 (defn- shared-symbols [r1 r2]
   (set/intersection (set (:symbols r1)) (set (:symbols r2))))
 
@@ -211,7 +204,11 @@
         (update ctx :rels conj (project ctx (first relevant) bound))))))
 
 (defmethod impl ::in [ctx [_ inputs]]
-  (reduce introduce-input ctx inputs))
+  (reduce
+   (fn [ctx sym]
+     (as-> ctx ctx
+       (introduce-sym ctx sym)
+       (update ctx :in assoc sym (resolve ctx sym)))) ctx inputs))
 
 (defmethod impl ::where [ctx [_ clauses]]
   (reduce impl ctx clauses))
