@@ -119,11 +119,11 @@
 (defn- join
   "Unifies two conflicting relations by equi-joining them."
   [ctx r1 r2]
-  (when debug?
-    (println "Introducing join" (select-keys ctx [:rels :operator])))
   (let [shared      (shared-symbols r1 r2)
         ;; @TODO join on more than one variable
         join-sym    (first shared)
+        _           (when debug?
+                      (println "Introducing join" join-sym r1 r2))
         result-syms (concat [join-sym] (remove shared (:symbols r1)) (remove shared (:symbols r2)))
         plan        {:Join [(:plan r1) (:plan r2) (resolve ctx join-sym)]}]
     (Relation. result-syms plan)))
@@ -162,16 +162,15 @@
 (defn- introduce-relation [ctx rel]
   (when debug?
     (println "Introducing" (:plan rel) (select-keys ctx [:rels :operator])))
-  (let [conflict?          (fn [other] (some? (shared-symbols rel other)))
+  (let [conflict?          (fn [other] (some? (seq (shared-symbols rel other))))
         [conflicting free] (separate conflict? (:rels ctx))]
-    ;; there can only ever be at most a single conflict (we should be
-    ;; introducing relations one by one)
-    (cond
-      (empty? conflicting)      (update ctx :rels conj rel)
-      (= (count conflicting) 1) (case (:operator ctx)
-                                  :AND (assoc ctx :rels (conj free (join ctx (first conflicting) rel)))
-                                  :OR  (assoc ctx :rels (conj free (union ctx (first conflicting) rel))))
-      :else                     (throw (ex-info "More than one conflict found" {:ctx ctx :rel rel})))))
+    (if (empty? conflicting)
+      (update ctx :rels conj rel)
+      (let [unified (case (:operator ctx)
+                      ;; @TODO think about join order here
+                      :AND (reduce (fn [rel other] (join ctx other rel)) rel conflicting)
+                      :OR  (reduce (fn [rel other] (union ctx other rel)) rel conflicting))]
+        (assoc ctx :rels (conj free unified))))))
 
 (defn- introduce-simple-relation [ctx rel]
   (if (:negate? ctx)
