@@ -79,7 +79,10 @@
 
 (defn- resolve-all [ctx syms] (mapv #(resolve ctx %) syms))
 
-(defn- attr-id [ctx a] (get-in ctx [:attr->int a]))
+(defn- attr-id [ctx a]
+  (if-let [pair (find (:attr->int ctx) a)]
+    (val pair)
+    (throw (ex-info "Unknown attribute." {:ctx ctx :attr a}))))
 
 (defn- render-value [[type v]]
   (case type

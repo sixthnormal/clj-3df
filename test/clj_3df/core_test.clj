@@ -9,11 +9,13 @@
 (def debug-test? true)
 
 (def schema
-  {:name   {:db/valueType :String}
-   :age    {:db/valueType :Number}
-   :friend {:db/valueType :Eid}
-   :edge   {:db/valueType :Eid}
-   :admin? {:db/valueType :Bool}})
+  {:name    {:db/valueType :String}
+   :age     {:db/valueType :Number}
+   :friend  {:db/valueType :Eid}
+   :edge    {:db/valueType :Eid}
+   :admin?  {:db/valueType :Bool}
+   :node    {:db/valueType :Eid}
+   :extends {:db/valueType :Eid}})
 
 (def db (df/create-db schema))
 
@@ -149,7 +151,7 @@
                   (and [?z :edge ?y]
                        (recur ?x ?z)))]]
     (is (= {:Union [[0 1]
-                    [{:HasAttr [0 nil 1]}
+                    [{:HasAttr [0 600 1]}
                      {:Join [{:HasAttr [2 400 1]}
                              {:RuleExpr ["recur" [0 2]]} 2]}]]}
            (df/plan-query db query)))))
@@ -183,7 +185,7 @@
                 [(propagate ?x ?y) [?z :edge ?y] (propagate ?x ?z)]]]
     (is (= #{(parser/->Rule "propagate" {:Union
                                          [[0 1]
-                                          [{:HasAttr [0 nil 1]}
+                                          [{:HasAttr [0 600 1]}
                                            {:Join [{:HasAttr [2 400 1]}
                                                    {:RuleExpr ["propagate" [0 2]]} 2]}]]})}
            (df/plan-rules db rules)))))
@@ -197,9 +199,9 @@
                                        [[1 0]
                                         [{:Filter [0 100 {:String "Object"}]}
                                          {:Join [{:HasAttr [1 100 2]} {:HasAttr [0 100 2]} 2]}
-                                         {:HasAttr [1 nil 0]}
+                                         {:HasAttr [1 700 0]}
                                          {:Join
-                                          [{:HasAttr [1 nil 3]} {:RuleExpr ["subtype" [3 0]]} 3]}]]})}
+                                          [{:HasAttr [1 700 3]} {:RuleExpr ["subtype" [3 0]]} 3]}]]})}
            (df/plan-rules db rules)))))
 
 (deftest test-predicates
@@ -208,6 +210,6 @@
                 :where
                 [?user :age ?age]
                 [(< ?age ?max-age)]]]
-    (is (= {:Project
+    (is (= {:Project					
             [{:Join [{:HasAttr [1 200 2]} {:PredExpr ["<" [2 0]]} 2]} [1 2]]}
            (df/plan-query db query)))))
