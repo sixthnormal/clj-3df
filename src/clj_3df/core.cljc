@@ -115,24 +115,23 @@
     {:Transact {:tx_data tx-data}}))
 
 (defn transact! [conn db tx-data]
-  (->> (transact tx-data) (json/generate-string) (stream/put! conn)))
+  (->> (transact db tx-data) (json/generate-string) (stream/put! conn)))
+
+(def subscriber
+  (Thread.
+   (fn []
+     (println "[SUBSCRIBER] running")
+     (loop []
+       (when-let [result @(stream/take! conn ::drained)]
+         (if (= result ::drained)
+           (println "[SUBSCRIBER] server closed connection")
+           (do
+             (println result)
+             (recur))))))))
 
 (comment
   (def conn @(http/websocket-client "ws://127.0.0.1:6262"))
-
-  (def subscriber
-    (Thread.
-     (fn []
-       (println "[SUBSCRIBER] running")
-       (loop []
-         (when-let [result @(stream/take! conn ::drained)]
-           (if (= result ::drained)
-             (println "[SUBSCRIBER] server closed connection")
-             (do
-               (println result)
-               (recur)))))))))
-
-(comment
+  
   (.start subscriber)
   (.getState subscriber)
 
@@ -145,8 +144,20 @@
 
   (def db (create-db schema))
 
-  (register-query! conn db "test" '[:find ?e :where [?e :name "Mabel"]])
+  (register-query! conn db "test" '[:find ?e
+                                    :where
+                                    (or [?e :name "Mabel"]
+                                        (not [?e :name "Mabel"]))])
 
+  (register-query! conn db "test" '[:find ?e
+                                    :where
+                                    (and [?e :name "Mabel"]
+                                         (not [?e :name "Mabel"]))])
+
+  (register-query! conn db "test" '[:find ?e
+                                    :where
+                                    (not [?e :name "Mabel"])])
+  
   (transact db [{:db/id  1
                  :name   "Dipper"
                  :age    12
