@@ -123,12 +123,12 @@
                              {:HasAttr [2 400 1]} 2]}]]}
            (plan-query db query)))))
 
-(deftest test-not
+(deftest test-fully-unbounded-not
   (let [query '[:find ?e :where (not [?e :name "Mabel"])]]
     (is (= {:Not {:Filter [0 100 {:String "Mabel"}]}}
            (plan-query db query)))))
 
-(deftest test-tricky-not
+(deftest test-tautology
   (let [query '[:find ?e
                 :where (or [?e :name "Mabel"]
                            (not [?e :name "Mabel"]))]]
@@ -136,6 +136,22 @@
                     [{:Filter [0 100 {:String "Mabel"}]}
                      {:Not {:Filter [0 100 {:String "Mabel"}]}}]]}
            (plan-query db query)))))
+
+(deftest test-bounded-not
+  (let [query '[:find ?e ?name
+                :where
+                [?e :name ?name]
+                (or [?e :name "Mabel"]
+                    (not [?e :name "Mabel"]))]]
+    ;; @TODO
+    ))
+
+(deftest test-contradiction
+  (let [query '[:find ?e
+                :where (and [?e :name "Mabel"]
+                            (not [?e :name "Mabel"]))]]
+    ;; @TODO
+    ))
 
 (deftest test-reachability
   (let [query '[:find ?x ?y
