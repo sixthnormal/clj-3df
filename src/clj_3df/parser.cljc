@@ -198,7 +198,7 @@
         relevant?             (fn [rel] (some? (set/intersection (set (:symbols rel)) (set bound))))
         [relevant irrelevant] (separate relevant? (:rels ctx))]
     (cond
-      (seq unbound)          (throw (ex-info "Find spec contains unbound symbols." unbound))
+      (seq unbound)          (throw (ex-info "Find spec contains unbound symbols." {:unbound unbound}))
       (empty? relevant)      (throw (ex-info "Find spec doesn't match any symbols." {:find-symbols syms}))
       (> (count relevant) 1) (throw (ex-info "Projecting across multiple relations is not yet supported." ctx))
       :else
