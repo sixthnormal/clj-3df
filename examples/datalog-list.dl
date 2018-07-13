@@ -1,0 +1,119 @@
+// Download the Soufflé Datalog engine from http://souffle-lang.org/
+// Then run `souffle datalog-list.dl`
+
+// Datatype of Lamport timestamps, used to uniquely identify ops and objects
+.type id = [ctr: number, node: number]
+
+// Example tree, encoded as insert(Child, Parent) facts:
+//
+//        0
+//      /   \
+//     2     1
+//   / | \   |
+//  6  5  3  4
+
+.decl insert(ID: id, Parent: id)
+insert([1,0], [0,0]).
+insert([2,0], [0,0]).
+insert([3,0], [2,0]).
+insert([4,0], [1,0]).
+insert([5,0], [2,0]).
+insert([6,0], [2,0]).
+
+// The list order is the pre-order depth-first traversal over this tree, with
+// siblings visited in descending order. Thus, the above tree represents the list:
+// [0, 2, 6, 5, 3, 1, 4].
+//
+// We express the list order with the nextElem(Prev, Next) relation. It contains
+// the following pairs (think like a linked list):
+// (0, 2), (2, 6), (6, 5), (5, 3), (3, 1), (1, 4).
+//
+// Those numbers are unique identifiers for list elements that are assigned by
+// the system. To associate a value with a list element, we use a fact
+// assign(ID, Element, Value) where ID is a unique identifier of the assignment
+// operation, and Element is the identifier of the list element.
+
+.type string
+.decl assign(ID: id, Element: id, Value: string)
+.decl remove(ID: id)
+assign([0,1], [0,0], "-"). // need to assign a dummy value to the head element?
+assign([2,1], [2,0], "H").
+assign([6,1], [6,0], "e"). assign([6,2], [6,0], "i"). remove([6,2]).
+assign([5,1], [5,0], "l"). remove([5,1]). assign([5,3], [5,0], "y").
+assign([3,1], [3,0], "l"). remove([3,1]).
+assign([1,1], [1,0], "o"). assign([1,2], [1,0], "i"). remove([1,1]). remove([1,2]).
+assign([4,1], [4,0], "!"). assign([4,2], [4,0], "?").
+
+// Definition of insertion into an ordered list (defines nextElem):
+
+.decl hasChild(Parent: id)
+hasChild(Parent) :- insert(_, Parent).
+
+.decl laterChild(Parent: id, Child2: id)
+laterChild(Parent, [Ctr2, N2]) :-
+  insert([Ctr1, N1], Parent),
+  insert([Ctr2, N2], Parent),
+  (Ctr1 > Ctr2; (Ctr1 = Ctr2, N1 > N2)).
+
+.decl firstChild(Parent: id, Child: id)
+firstChild(Parent, Child) :-
+  insert(Child, Parent),
+  !laterChild(Parent, Child).
+
+.decl sibling(Child1: id, Child2: id)
+sibling(Child1, Child2) :-
+  insert(Child1, Parent),
+  insert(Child2, Parent).
+
+.decl laterSibling(Sib1: id, Sib2: id)
+laterSibling([Ctr1,N1], [Ctr2,N2]) :-
+  sibling([Ctr1,N1], [Ctr2,N2]),
+  (Ctr1 > Ctr2; (Ctr1 = Ctr2, N1 > N2)).
+
+.decl laterSibling2(Sib1: id, Sib3: id)
+laterSibling2([Ctr1,N1], [Ctr3,N3]) :-
+  sibling([Ctr1,N1], [Ctr2,N2]),
+  sibling([Ctr1,N1], [Ctr3,N3]),
+  (Ctr1 > Ctr2; (Ctr1 = Ctr2, N1 > N2)),
+  (Ctr2 > Ctr3; (Ctr2 = Ctr3, N2 > N3)).
+
+.decl nextSibling(Sib1: id, Sib2: id)
+nextSibling(Sib1, Sib2) :-
+  laterSibling(Sib1, Sib2),
+  !laterSibling2(Sib1, Sib2).
+
+.decl hasNextSibling(Sib1: id)
+hasNextSibling(Sib1) :-
+  laterSibling(Sib1, _).
+
+.decl nextSiblingAnc(Start: id, Next: id)
+nextSiblingAnc(Start, Next) :- nextSibling(Start, Next).
+nextSiblingAnc(Start, Next) :- !hasNextSibling(Start), insert(Start, Parent), nextSiblingAnc(Parent, Next).
+
+.decl nextElem(Prev: id, Next: id)
+nextElem(Prev, Next) :- firstChild(Prev, Next).
+nextElem(Prev, Next) :- !hasChild(Prev), nextSiblingAnc(Prev, Next).
+
+
+// Assigning values to list elements.
+
+.decl currentValue(Elem: id, Value: string)
+currentValue(Elem, Value) :- assign(ID, Elem, Value), !remove(ID).
+
+.decl hasValue(Elem: id)
+hasValue(Elem) :- currentValue(Elem, _).
+
+.decl skipBlank(From: id, To: id)
+skipBlank(From, To) :- nextElem(From, To).
+skipBlank(From, To) :- nextElem(From, Via), !hasValue(Via), skipBlank(Via, To).
+
+.decl nextVisible(Prev: id, Next: id)
+nextVisible(Prev, Next) :- hasValue(Prev), skipBlank(Prev, Next), hasValue(Next).
+
+
+// Output
+
+.decl result(ctr1: number, ctr2: number, value: string)
+result(ctr1, ctr2, value) :- nextVisible([ctr1, _], [ctr2, node2]), currentValue([ctr2, node2], value).
+
+.output result(IO=stdout)

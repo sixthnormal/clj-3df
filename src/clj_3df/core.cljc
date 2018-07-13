@@ -117,20 +117,23 @@
 (defn transact! [conn db tx-data]
   (->> (transact db tx-data) (json/generate-string) (stream/put! conn)))
 
-(def subscriber
-  (Thread.
-   (fn []
-     (println "[SUBSCRIBER] running")
-     (loop []
-       (when-let [result @(stream/take! conn ::drained)]
-         (if (= result ::drained)
-           (println "[SUBSCRIBER] server closed connection")
-           (do
-             (println result)
-             (recur))))))))
+(comment
+  
+  (def conn @(http/websocket-client "ws://127.0.0.1:6262"))
+
+  (def subscriber
+    (Thread.
+     (fn []
+       (println "[SUBSCRIBER] running")
+       (loop []
+         (when-let [result @(stream/take! conn ::drained)]
+           (if (= result ::drained)
+             (println "[SUBSCRIBER] server closed connection")
+             (do
+               (println result)
+               (recur)))))))))
 
 (comment
-  (def conn @(http/websocket-client "ws://127.0.0.1:6262"))
   
   (.start subscriber)
   (.getState subscriber)
