@@ -244,7 +244,7 @@
 
 (defmethod impl ::pred-expr [ctx [_ [{:keys [predicate fn-args]}]]]
   ;; assume for now, that input symbols are bound at this point
-  (let [encode-predicate {'< "LT" '<= "LTE" '> "GT" '>= "GTE" '= "EQ"}
+  (let [encode-predicate {'< "LT" '<= "LTE" '> "GT" '>= "GTE" '= "EQ" 'not= "NEQ"}
         binds-all?       (fn [rel]
                            (when (set/subset? fn-args (set (.-symbols rel)))
                              rel))
