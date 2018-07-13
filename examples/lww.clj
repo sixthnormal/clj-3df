@@ -1,6 +1,6 @@
 (ns clj-3df.examples.lww
   (:require
-   [clj-3df.core :refer [create-db plan-rules]]))
+   [clj-3df.core :refer [create-db register-query plan-rules]]))
 
 ;; LWW Register
 ;; https://speakerdeck.com/ept/data-structures-as-queries-expressing-crdts-using-datalog?slide=15
@@ -22,13 +22,26 @@
      [?op :assign/time ?t]
      [?op :assign/key ?key]
      [?op :assign/value ?val]
-     (not [(older ?t ?key)])]])
-
-;; possible ergonomics improvement
-;; (def rules
-;;   '[[(older ?t1 ?key)
-;;      #:assign{:key ?key :time ?t1}
-;;      #:assign{:key ?key :time ?t2}
-;;      [(< ?t1 ?t2)]]])
+     (not (older ?t ?key))]])
 
 (plan-rules db rules)
+
+;; possible ergonomics improvement
+
+(def rules'
+  '[[(older ?t1 ?key)
+     #:assign{:key ?key :time ?t1}
+     #:assign{:key ?key :time ?t2}
+     [(< ?t1 ?t2)]]
+
+    [(lww ?key ?value)
+     #:assign{:time ?t :key ?key :value ?value}
+     (not (older ?t ?key))]])
+
+(plan-rules db rules')
+
+;; query
+
+(def q '[:find ?k ?v :where (lww ?k ?v)])
+
+(compile-query db q)

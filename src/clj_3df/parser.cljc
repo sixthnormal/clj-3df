@@ -272,7 +272,9 @@
   (introduce-relation ctx (Relation. fn-args {:PredExpr [(name predicate) (resolve-all ctx fn-args)]})))
 
 (defmethod impl ::rule-expr [ctx [_ {:keys [rule-name symbols]}]]
-  (introduce-relation ctx (Relation. symbols {:RuleExpr [(str rule-name) (resolve-all ctx symbols)]})))
+  (as-> ctx ctx
+    (reduce introduce-sym ctx symbols)
+    (introduce-relation ctx (Relation. symbols {:RuleExpr [(str rule-name) (resolve-all ctx symbols)]}))))
 
 (defmethod impl ::rules [ctx [_ rules]]
   (let [get-head     #(get-in % [0 :head])
