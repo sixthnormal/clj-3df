@@ -94,4 +94,5 @@
      (next-visible ?id1 ?id2)
      (current-value ?id2 ?value)]])
 
-(register-query! conn db "rga" '[:find ?ctr1 ?ctr2 ?value :where (result ?ctr1 ?ctr2 ?value)] rules)
+(exec! conn
+  (register-query db "rga" '[:find ?ctr1 ?ctr2 ?value :where (result ?ctr1 ?ctr2 ?value)] rules))

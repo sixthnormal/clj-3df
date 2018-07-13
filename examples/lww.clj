@@ -1,9 +1,8 @@
 (ns clj-3df.examples.lww
   (:require
-   [clj-3df.core :refer [create-conn create-db
-                         register-query register-query!
-                         plan-rules
-                         transact transact!]]))
+   [clj-3df.core :refer [create-conn create-db exec!
+                         register-plan register-query
+                         plan-rules transact]]))
 
 ;; LWW Register
 ;; https://speakerdeck.com/ept/data-structures-as-queries-expressing-crdts-using-datalog?slide=15
@@ -51,7 +50,25 @@
 
 (def conn (create-conn "ws://127.0.0.1:6262"))
 
-(register-query! conn db "lww" q rules)
+(plan-rules db rules)
 
-(transact db [#:assign{:time 4 :key 100 :value "X"}
-              #:assign{:time 2 :key 100 :value "Y"}])
+(exec! conn
+  (register-query db "lww" '[:find ?op ?op2 ?key ?t ?t
+                             :where
+                             [?op :assign/time ?t]
+                             [?op :assign/key ?key]
+                             [?op2 :assign/time ?t2]
+                             [?op2 :assign/key ?key]
+                             [(< ?t2 ?t)]] []))
+
+(exec! conn
+  (transact db [{:db/id 1 :assign/time 4 :assign/key 100 :assign/value "X"}
+                {:db/id 1 :assign/time 2 :assign/key 100 :assign/value "Y"}]))
+
+(exec! conn
+  (transact db [{:db/id 2 :assign/time 4 :assign/key 100 :assign/value "X"}
+                {:db/id 2 :assign/time 6 :assign/key 100 :assign/value "Y"}]))
+
+(exec! conn
+  (transact db [{:db/id 3 :assign/time 5 :assign/key 100 :assign/value "X"}
+                {:db/id 3 :assign/time 5 :assign/key 100 :assign/value "Y"}]))

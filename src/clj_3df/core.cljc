@@ -56,20 +56,22 @@
         int->attr (set/map-invert attr->int)]
     (Differential. schema (rschema schema) attr->int int->attr 0 nil {})))
 
-(defn register-query [db name query rules]
-  (let [compiled   (compile-query db query)
-        rules-plan (if (empty? rules)
-                     []
-                     (plan-rules db rules))]
-    {:Register {:query_name name
-                :plan       (.-plan compiled)
-                :in         (.-in compiled)
-                :rules      rules-plan}}))
+(defn register-plan [db name plan rules-plan]
+  {:Register {:query_name name
+              :plan       plan
+              :rules      rules-plan}})
 
-(defn register-query!
-  ([conn db name query] (register-query! conn db name query []))
-  ([conn db name query rules]
-   (->> (register-query db name query rules) (json/generate-string) (stream/put! conn))))
+(defn register-query
+  ([db name query] (register-query db name query []))
+  ([db name query rules]
+   (let [compiled   (compile-query db query)
+         rules-plan (if (empty? rules)
+                      []
+                      (plan-rules db rules))]
+     {:Register {:query_name name
+                 :plan       (.-plan compiled)
+                 :in         (.-in compiled)
+                 :rules      rules-plan}})))
 
 (defn- ^Boolean is-attr? [db attr property] (contains? (-attrs-by db property) attr))
 (defn- ^Boolean multival? [db attr] (is-attr? db attr :db.cardinality/many))
@@ -119,9 +121,6 @@
                           [] tx-data)]
     {:Transact {:tx_data tx-data}}))
 
-(defn transact! [conn db tx-data]
-  (->> (transact db tx-data) (json/generate-string) (stream/put! conn)))
-
 (defn create-conn [url]
   (let [conn       @(http/websocket-client url)
         subscriber (Thread.
@@ -137,6 +136,10 @@
     (.start subscriber)
     conn))
 
+(defmacro exec! [conn & forms]
+  (cons 'do (for [form forms]
+              (list 'clojure.core/->> form '(json/generate-string) `(stream/put! ~conn)))))
+
 (comment
 
   (def conn (create-conn "ws://127.0.0.1:6262"))
@@ -150,19 +153,20 @@
 
   (def db (create-db schema))
 
-  (register-query! conn db "test" '[:find ?e
-                                    :where
-                                    (or [?e :name "Mabel"]
-                                        (not [?e :name "Mabel"]))])
+  (exec! conn
+    (register-query db "test" '[:find ?e
+                                :where
+                                (or [?e :name "Mabel"]
+                                    (not [?e :name "Mabel"]))])
+    
+    (register-query db "test" '[:find ?e
+                                :where
+                                (and [?e :name "Mabel"]
+                                     (not [?e :name "Mabel"]))])
 
-  (register-query! conn db "test" '[:find ?e
-                                    :where
-                                    (and [?e :name "Mabel"]
-                                         (not [?e :name "Mabel"]))])
-
-  (register-query! conn db "test" '[:find ?e
-                                    :where
-                                    (not [?e :name "Mabel"])])
+    (register-query db "test" '[:find ?e
+                                :where
+                                (not [?e :name "Mabel"])]))
   
   (transact db [{:db/id  1
                  :name   "Dipper"
@@ -170,8 +174,8 @@
                  :admin? true}
                 [:db/add 2 :friend 1]])
   
-  (transact! conn db [[:db/add 1 :name "Dipper"]])
-  (transact! conn db [[:db/add 2 :name "Mabel"]])
-  (transact! conn db [[:db/retract 2 :name "Mabel"]])
-  (transact! conn db [[:db/retract 1 :name "Dipper"]
-                      [:db/add 1 :name "Mabel"]]))
+  (exec! conn (transact db [[:db/add 1 :name "Dipper"]]))
+  (exec! conn (transact db [[:db/add 2 :name "Mabel"]]))
+  (exec! conn (transact db [[:db/retract 2 :name "Mabel"]]))
+  (exec! conn (transact db [[:db/retract 1 :name "Dipper"]
+                            [:db/add 1 :name "Mabel"]])))

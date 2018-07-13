@@ -37,11 +37,12 @@ WebSocket connection.
 For example, consider a subscriber created the following subscription:
 
 ``` clojure
-(register-query! conn db "user inbox" 
-  '[:find ?msg ?content
-    :where 
-	[?msg :msg/recipient "me@nikolasgoebel.com"]
-	[?msg :msg/content ?content]])
+(exec! conn
+  (register-query db "user inbox" 
+    '[:find ?msg ?content
+      :where 
+	  [?msg :msg/recipient "me@nikolasgoebel.com"]
+	  [?msg :msg/content ?content]]))
 ```
 
 and a new message arrives in the system.
