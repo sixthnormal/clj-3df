@@ -113,7 +113,12 @@
                         {type v})))
         tx-data   (reduce (fn [tx-data datum]
                             (cond
-                              (map? datum) (into tx-data (transact db (explode db datum)))
+                              (map? datum)
+                              (->> (explode db datum)
+                                   (transact db)
+                                   :Transact
+                                   :tx_data
+                                   (into tx-data))
                               
                               (sequential? datum)
                               (let [[op e a v] datum]
