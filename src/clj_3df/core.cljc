@@ -56,15 +56,20 @@
         int->attr (set/map-invert attr->int)]
     (Differential. schema (rschema schema) attr->int int->attr 0 nil {})))
 
-(defn register-query [db name query]
-  (let [compiled (compile-query db query)]
+(defn register-query [db name query rules]
+  (let [compiled   (compile-query db query)
+        rules-plan (if (empty? rules)
+                     []
+                     (plan-rules db rules))]
     {:Register {:query_name name
                 :plan       (.-plan compiled)
                 :in         (.-in compiled)
-                :rules      []}}))
+                :rules      rules-plan}}))
 
-(defn register-query! [conn db name query]
-  (->> (register-query db name query) (json/generate-string) (stream/put! conn)))
+(defn register-query!
+  ([conn db name query] (register-query! conn db name query []))
+  ([conn db name query rules]
+   (->> (register-query db name query rules) (json/generate-string) (stream/put! conn))))
 
 (defn- ^Boolean is-attr? [db attr property] (contains? (-attrs-by db property) attr))
 (defn- ^Boolean multival? [db attr] (is-attr? db attr :db.cardinality/many))
@@ -90,7 +95,7 @@
       (if (and (ref? db straight-a) (map? v)) ;; another entity specified as nested map
         (assoc v (reverse-ref a) eid)
         (if reverse?
-          [:db/add v   straight-a eid]
+          [:db/add v straight-a eid]
           [:db/add eid straight-a v])))))
 
 (defn transact [db tx-data]
@@ -117,27 +122,25 @@
 (defn transact! [conn db tx-data]
   (->> (transact db tx-data) (json/generate-string) (stream/put! conn)))
 
+(defn create-conn [url]
+  (let [conn       @(http/websocket-client url)
+        subscriber (Thread.
+                    (fn []
+                      (println "[SUBSCRIBER] running")
+                      (loop []
+                        (when-let [result @(stream/take! conn ::drained)]
+                          (if (= result ::drained)
+                            (println "[SUBSCRIBER] server closed connection")
+                            (do
+                              (println result)
+                              (recur)))))))]
+    (.start subscriber)
+    conn))
+
 (comment
+
+  (def conn (create-conn "ws://127.0.0.1:6262"))
   
-  (def conn @(http/websocket-client "ws://127.0.0.1:6262"))
-
-  (def subscriber
-    (Thread.
-     (fn []
-       (println "[SUBSCRIBER] running")
-       (loop []
-         (when-let [result @(stream/take! conn ::drained)]
-           (if (= result ::drained)
-             (println "[SUBSCRIBER] server closed connection")
-             (do
-               (println result)
-               (recur)))))))))
-
-(comment
-  
-  (.start subscriber)
-  (.getState subscriber)
-
   (def schema
     {:name   {:db/valueType :String}
      :age    {:db/valueType :Number}

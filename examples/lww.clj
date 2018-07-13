@@ -1,6 +1,9 @@
 (ns clj-3df.examples.lww
   (:require
-   [clj-3df.core :refer [create-db register-query plan-rules]]))
+   [clj-3df.core :refer [create-conn create-db
+                         register-query register-query!
+                         plan-rules
+                         transact transact!]]))
 
 ;; LWW Register
 ;; https://speakerdeck.com/ept/data-structures-as-queries-expressing-crdts-using-datalog?slide=15
@@ -8,7 +11,7 @@
 (def schema
   {:assign/time  {:db/valueType :Number}
    :assign/key   {:db/valueType :Number}
-   :assign/value {:db/valueType :Number}})
+   :assign/value {:db/valueType :String}})
 
 (def db (create-db schema))
 
@@ -44,4 +47,11 @@
 
 (def q '[:find ?k ?v :where (lww ?k ?v)])
 
-(compile-query db q)
+;; test
+
+(def conn (create-conn "ws://127.0.0.1:6262"))
+
+(register-query! conn db "lww" q rules)
+
+(transact db [#:assign{:time 4 :key 100 :value "X"}
+              #:assign{:time 2 :key 100 :value "Y"}])
