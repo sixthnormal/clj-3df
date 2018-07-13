@@ -10,9 +10,6 @@
    [cheshire.core :as json]
    [clj-3df.parser :as parser]))
 
-(def ^{:arglists '([db query])} compile-query parser/compile-query)
-(def ^{:arglists '([db rules])} plan-rules parser/plan-rules)
-
 (defprotocol IDB
   (-schema [db])
   (-attrs-by [db property])
@@ -64,10 +61,10 @@
 (defn register-query
   ([db name query] (register-query db name query []))
   ([db name query rules]
-   (let [compiled   (compile-query db query)
+   (let [compiled   (parser/compile-query db query)
          rules-plan (if (empty? rules)
                       []
-                      (plan-rules db rules))]
+                      (parser/plan-rules db rules))]
      {:Register {:query_name name
                  :plan       (.-plan compiled)
                  :in         (.-in compiled)
