@@ -228,6 +228,21 @@
            (df/plan-rules db rules)))))
 
 (deftest test-predicates
+  (let [query    '[:find ?a1 ?a2
+                   :where
+                   [?user :age ?a1]
+                   [?user :age ?a2]
+                   [(< ?a1 ?a2)]]
+        compiled (parser/compile-query db query)]
+    (is (= {:PredExpr
+            ["LT"
+             {:Project
+              [{:Join [{:HasAttr [0 200 1]}
+                       {:HasAttr [0 200 2]} 0]}
+               [1 2]]}]}
+           (.-plan compiled)))))
+
+(deftest test-inputs
   (let [query    '[:find ?user ?age
                    :in ?max-age
                    :where

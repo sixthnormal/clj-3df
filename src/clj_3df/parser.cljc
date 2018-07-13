@@ -38,13 +38,13 @@
         ::or (s/cat :marker #{'or} :clauses (s/+ ::clause))
         ::or-join (s/cat :marker #{'or-join} :symbols (s/and vector? (s/+ ::variable)) :clauses (s/+ ::clause))
         ::not (s/cat :marker #{'not} :clauses (s/+ ::clause))
+        ::pred-expr (s/tuple (s/cat :predicate ::predicate
+                                    ;; @TODO should be (s/or :var :const) eventually
+                                    :fn-args (s/+ ::variable)))
         ::lookup (s/tuple ::eid keyword? ::variable)
         ::entity (s/tuple ::eid ::variable ::variable)
         ::hasattr (s/tuple ::variable keyword? ::variable)
         ::filter (s/tuple ::variable keyword? ::value)
-        ::pred-expr (s/tuple (s/cat :predicate ::predicate
-                                    ;; @TODO should be (s/or :var :const) eventually
-                                    :fn-args (s/+ ::variable)))
         ::rule-expr (s/cat :rule-name ::rule-name
                            ;; @TODO should be (s/or :var :const) eventually
                            :symbols (s/+ ::variable))))
@@ -242,6 +242,18 @@
   (-> (reduce impl (negate-ctx ctx) clauses)
       (assoc :negate? (:negate? ctx))))
 
+(defmethod impl ::pred-expr [ctx [_ [{:keys [predicate fn-args]}]]]
+  ;; assume for now, that input symbols are bound at this point
+  (let [encode-predicate {'< "LT" '<= "LTE" '> "GT" '>= "GTE" '= "EQ"}
+        binds-all?       (fn [rel]
+                           (when (set/subset? fn-args (set (.-symbols rel)))
+                             rel))
+        [matching other] (separate binds-all? (.-rels ctx))]
+    (assert (= (count matching) 1) "All predicate inputs must be bound in a single relation.")
+    (let [rel     (first matching)
+          wrapped (Relation. fn-args {:PredExpr [(encode-predicate predicate) (resolve-all ctx fn-args) (.-plan rel)]})]
+      (assoc ctx :rels (conj (set other) wrapped)))))
+
 (defmethod impl ::lookup [ctx [_ [e a sym-v]]]
   (as-> ctx ctx
     (introduce-sym ctx sym-v)
@@ -267,9 +279,6 @@
     (introduce-sym ctx sym-e)
     (introduce-simple-relation ctx
                                (Relation. [sym-e] {:Filter [(resolve ctx sym-e) (attr-id ctx a) (render-value v)]}))))
-
-(defmethod impl ::pred-expr [ctx [_ [{:keys [predicate fn-args]}]]]
-  (introduce-relation ctx (Relation. fn-args {:PredExpr [(name predicate) (resolve-all ctx fn-args)]})))
 
 (defmethod impl ::rule-expr [ctx [_ {:keys [rule-name symbols]}]]
   (as-> ctx ctx
