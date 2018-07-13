@@ -166,7 +166,7 @@
                       ;; @TODO think about join order here
                       :AND (reduce (fn [rel other] (join ctx other rel)) rel conflicting)
                       :OR  (reduce (fn [rel other] (union ctx other rel)) rel conflicting))]
-        (assoc ctx :rels (conj free unified))))))
+        (assoc ctx :rels (conj (set free) unified))))))
 
 (defn- introduce-simple-relation [ctx rel]
   (if (:negate? ctx)
@@ -182,6 +182,20 @@
   (if (= (:symbols rel) symbols)
     rel
     (Relation. symbols {:Project [(:plan rel) (resolve-all ctx symbols)]})))
+
+(defn- bind-predicate [ctx [predicate fn-args]]
+  ;; assume for now, that input symbols are bound at this point
+  (let [encode-predicate {'< "LT" '<= "LTE" '> "GT" '>= "GTE" '= "EQ" 'not= "NEQ"}
+        binds-all?       (fn [rel] (set/subset? fn-args (set (.-symbols rel))))
+        [matching other] (separate binds-all? (.-rels ctx))]
+    (if (not= (count matching) 1)
+      (throw (ex-info "All predicate inputs must be bound in a single relation." {:predicate predicate
+                                                                                  :fn-args   fn-args
+                                                                                  :matching  matching
+                                                                                  :other     other}))
+      (let [rel     (first matching)
+            wrapped (Relation. fn-args {:PredExpr [(encode-predicate predicate) (resolve-all ctx fn-args) (.-plan rel)]})]
+        (assoc ctx :rels (conj (set other) wrapped))))))
 
 (defmulti impl (fn [ctx query] (first query)))
 
@@ -203,7 +217,7 @@
       (> (count relevant) 1) (throw (ex-info "Projecting across multiple relations is not yet supported." ctx))
       :else
       (as-> ctx ctx
-        (assoc ctx :rels irrelevant)
+        (assoc ctx :rels (set irrelevant))
         (update ctx :rels conj (project ctx (first relevant) bound))))))
 
 (defmethod impl ::in [ctx [_ inputs]]
@@ -243,16 +257,7 @@
       (assoc :negate? (:negate? ctx))))
 
 (defmethod impl ::pred-expr [ctx [_ [{:keys [predicate fn-args]}]]]
-  ;; assume for now, that input symbols are bound at this point
-  (let [encode-predicate {'< "LT" '<= "LTE" '> "GT" '>= "GTE" '= "EQ" 'not= "NEQ"}
-        binds-all?       (fn [rel]
-                           (when (set/subset? fn-args (set (.-symbols rel)))
-                             rel))
-        [matching other] (separate binds-all? (.-rels ctx))]
-    (assert (= (count matching) 1) "All predicate inputs must be bound in a single relation.")
-    (let [rel     (first matching)
-          wrapped (Relation. fn-args {:PredExpr [(encode-predicate predicate) (resolve-all ctx fn-args) (.-plan rel)]})]
-      (assoc ctx :rels (conj (set other) wrapped)))))
+  (bind-predicate ctx [predicate fn-args]))
 
 (defmethod impl ::lookup [ctx [_ [e a sym-v]]]
   (as-> ctx ctx
@@ -295,14 +300,13 @@
         process-rule (fn [ctx [head rules]]
                        (let [rel->rule       (fn [rel] (Rule. (str (:name head)) (.-plan rel)))
                              wrap-and        (fn [clauses] [::and {:clauses clauses}])
-                             wrapped-clauses (map (comp wrap-and get-clauses) rules)]
-                         (as-> ctx ctx
-                           (if (= (count rules) 1)
-                             (let [ctx (impl ctx [::where (get-clauses (first rules))])
-                                   rel (extract-relation ctx)]
-                               (assoc ctx :rels #{(project ctx rel (:vars head))}))
-                             (impl ctx [::or-join {:symbols (:vars head) :clauses wrapped-clauses}]))
-                           (update ctx :rules into (map rel->rule (:rels ctx))))))]
+                             wrapped-clauses (map (comp wrap-and get-clauses) rules)
+                             ctx             (if (= (count rules) 1)
+                                               (let [ctx (impl ctx [::where (get-clauses (first rules))])
+                                                     rel (extract-relation ctx)]
+                                                 (assoc ctx :rels #{(project ctx rel (:vars head))}))
+                                               (impl ctx [::or-join {:symbols (:vars head) :clauses wrapped-clauses}]))]
+                         (update ctx :rules into (map rel->rule (:rels ctx)))))]
     (reduce process-rule ctx (seq by-head))))
 
 ;; PUBLIC API
