@@ -6,8 +6,6 @@
 
 ;; CONFIGURATION
 
-(def debug-test? true)
-
 (def schema
   {:name    {:db/valueType :String}
    :age     {:db/valueType :Number}
@@ -55,22 +53,26 @@
     (testing "error is thrown on unbound symbols in a find-clause"
       (is (thrown? Exception (plan-query db '[:find ?unbound :where [?bound :name "Dipper"]]))))
     
-    (is (= {:Project [{:Join [{:HasAttr [0 100 1]}
-                              {:HasAttr [2 100 1]} 1]} [0 1 2]]}
+    (is (= {:Project
+            [{:Join [{:HasAttr [2 100 1]} {:HasAttr [0 100 1]} 1]} [0 1 2]]}
            (plan-query db query)))))
 
 (deftest test-simple-join
   (let [query '[:find ?e ?n ?a
                 :where [?e :name ?n] [?e :age ?a]]]
-    (is (= {:Join [{:HasAttr [0 100 1]} {:HasAttr [0 200 2]} 0]}
+    (is (= {:Project
+            [{:Join [{:HasAttr [0 200 2]} {:HasAttr [0 100 1]} 0]} [0 1 2]]}
            (plan-query db query)))))
 
 (deftest test-nested-join
   (let [query '[:find ?e1 ?n1 ?e2 ?n2
                 :where [?e1 :name ?n1] [?e1 :friend ?e2] [?e2 :name ?n2]]]
-    (is (= {:Project [{:Join [{:Join [{:HasAttr [0 100 1]}
-                                      {:HasAttr [0 300 2]} 0]}
-                              {:HasAttr [2 100 3]} 2]} [0 1 2 3]]}
+    (is (= {:Project
+            [{:Join
+              [{:Join [{:HasAttr [2 100 3]} {:HasAttr [0 300 2]} 2]}
+               {:HasAttr [0 100 1]}
+               0]}
+             [0 1 2 3]]}
            (plan-query db query)))))
 
 (deftest test-simple-or
@@ -78,8 +80,8 @@
                 :where (or [?e :name "Dipper"]
                            [?e :age 12])]]
     (is (= {:Union [[0]
-                    [{:Filter [0 100 {:String "Dipper"}]}
-                     {:Filter [0 200 {:Number 12}]}]]}
+                    [{:Filter [0 200 {:Number 12}]}
+                     {:Filter [0 100 {:String "Dipper"}]}]]}
            (plan-query db query)))))
 
 (deftest test-multi-arity-join
@@ -88,9 +90,9 @@
                            [?e :age 12]
                            [?e :admin? false])]]
     (is (= {:Union [[0]
-                    [{:Filter [0 100 {:String "Dipper"}]}
+                    [{:Filter [0 500 {:Bool false}]}
                      {:Filter [0 200 {:Number 12}]}
-                     {:Filter [0 500 {:Bool false}]}]]}
+                     {:Filter [0 100 {:String "Dipper"}]}]]}
            (plan-query db query)))))
 
 (deftest test-nested-or-and-filter
@@ -100,9 +102,10 @@
                                 [?e :age 12]))]]
     (is (= {:Union
             [[0]
-             [{:Filter [0 100 {:String "Dipper"}]}
-              {:Join [{:Filter [0 100 {:String "Mabel"}]}
-                      {:Filter [0 200 {:Number 12}]} 0]}]]}
+             [{:Join [{:Filter [0 200 {:Number 12}]}
+                      {:Filter [0 100 {:String "Mabel"}]}
+                      0]}
+              {:Filter [0 100 {:String "Dipper"}]}]]}
            (plan-query db query)))))
 
 (deftest test-or-join
@@ -118,24 +121,29 @@
                                                          (and [?x :edge ?z] [?z :edge ?y]))]))))
     
     (is (= {:Union [[0 1]
-                    [{:HasAttr [0 400 1]}
-                     {:Join [{:HasAttr [0 400 2]}
-                             {:HasAttr [2 400 1]} 2]}]]}
+                    [{:Join [{:HasAttr [2 400 1]} {:HasAttr [0 400 2]} 2]}
+                     {:HasAttr [0 400 1]}]]}
+           (plan-query db query)))))
+
+(deftest test-not
+  (let [query '[:find ?e
+                :where [?e :age 12] (not [?e :name "Mabel"])]]
+    (is (= {:Antijoin
+            [{:Filter [0 200 {:Number 12}]} {:Filter [0 100 {:String "Mabel"}]} 0]}
            (plan-query db query)))))
 
 (deftest test-fully-unbounded-not
-  (let [query '[:find ?e :where (not [?e :name "Mabel"])]]
-    (is (= {:Not {:Filter [0 100 {:String "Mabel"}]}}
+  (let [query '[:find ?e
+                :where (not [?e :name "Mabel"])]]
+    ;; @TODO Decide what is the right semantics here. Disallow or negate?
+    (is (= {:Negate {:Filter [0 100 {:String "Mabel"}]}}
            (plan-query db query)))))
 
 (deftest test-tautology
   (let [query '[:find ?e
                 :where (or [?e :name "Mabel"]
                            (not [?e :name "Mabel"]))]]
-    (is (= {:Union [[0]
-                    [{:Filter [0 100 {:String "Mabel"}]}
-                     {:Not {:Filter [0 100 {:String "Mabel"}]}}]]}
-           (plan-query db query)))))
+    (is (thrown? Exception (plan-query db query)))))
 
 (deftest test-bounded-not
   (let [query '[:find ?e ?name
@@ -144,14 +152,23 @@
                 (or [?e :name "Mabel"]
                     (not [?e :name "Mabel"]))]]
     ;; @TODO
-    ))
+    #_(is (= {:Join
+            [{:HasAttr [0 100 1]}
+             {:Union [[0]
+                      {:Filter [0 100 {:String "Mabel"}]}
+                      {:Filter [0 ]}]}
+             0]}
+           (plan-query db query)))))
 
 (deftest test-contradiction
   (let [query '[:find ?e
                 :where (and [?e :name "Mabel"]
                             (not [?e :name "Mabel"]))]]
-    ;; @TODO
-    ))
+    (is (= {:Antijoin
+            [{:Filter [0 100 {:String "Mabel"}]}
+             {:Filter [0 100 {:String "Mabel"}]}
+             0]}
+           (plan-query db query)))))
 
 (deftest test-reachability
   (let [query '[:find ?x ?y
@@ -161,9 +178,8 @@
                   (and [?x :edge ?z]
                        (recur ?z ?y)))]]
     (is (= {:Union [[0 1]
-                    [{:HasAttr [0 400 1]}
-                     {:Join [{:HasAttr [0 400 2]}
-                             {:RuleExpr ["recur" [2 1]]} 2]}]]}
+                    [{:Join [{:RuleExpr ["recur" [2 1]]} {:HasAttr [0 400 2]} 2]}
+                     {:HasAttr [0 400 1]}]]}
            (plan-query db query)))))
 
 (deftest test-label-propagation
@@ -174,17 +190,9 @@
                   (and [?z :edge ?y]
                        (recur ?x ?z)))]]
     (is (= {:Union [[0 1]
-                    [{:HasAttr [0 600 1]}
-                     {:Join [{:HasAttr [2 400 1]}
-                             {:RuleExpr ["recur" [0 2]]} 2]}]]}
+                    [{:Join [{:RuleExpr ["recur" [0 2]]} {:HasAttr [2 400 1]} 2]}
+                     {:HasAttr [0 600 1]}]]}
            (plan-query db query)))))
-
-(deftest test-de-morgans
-  (is (= (plan-query db '[:find ?e :where (or (not [?e :name "Dipper"]) (not [?e :age 12]))])
-         (plan-query db '[:find ?e :where (not (and [?e :name "Dipper"] [?e :age 12]))])))
-
-  (is (= (plan-query db '[:find ?e :where (and (not [?e :name "Dipper"]) (not [?e :name "Mabel"]))])
-         (plan-query db '[:find ?e :where (not (or [?e :name "Dipper"] [?e :name "Mabel"]))]))))
 
 (deftest test-nested-and-or
   (let [query '[:find ?e
@@ -192,26 +200,25 @@
                            (and [?e :name "Dipper"]
                                 [?e :age 12]))]]
     (is (= {:Union [[0]
-                    [{:Filter [0 100 {:String "Mabel"}]}
-                     {:Join
-                      [{:Filter [0 100 {:String "Dipper"}]}
-                       {:Filter [0 200 {:Number 12}]} 0]}]]}
+                    [{:Join
+                      [{:Filter [0 200 {:Number 12}]}
+                       {:Filter [0 100 {:String "Dipper"}]} 0]}
+                     {:Filter [0 100 {:String "Mabel"}]}]]}
            (plan-query db query)))))
 
 (deftest test-simple-rule
   (let [rules '[[(admin? ?user) [?user :admin? true]]]]
     (is (= #{(parser/->Rule "admin?" {:Filter [0 500 {:Bool true}]})}
-           (df/plan-rules db rules)))))
+           (parser/compile-rules db rules)))))
 
 (deftest test-recursive-rule
   (let [rules '[[(propagate ?x ?y) [?x :node ?y]]
                 [(propagate ?x ?y) [?z :edge ?y] (propagate ?x ?z)]]]
     (is (= #{(parser/->Rule "propagate" {:Union
                                          [[0 1]
-                                          [{:HasAttr [0 600 1]}
-                                           {:Join [{:HasAttr [2 400 1]}
-                                                   {:RuleExpr ["propagate" [0 2]]} 2]}]]})}
-           (df/plan-rules db rules)))))
+                                          [{:Join [{:RuleExpr ["propagate" [0 2]]} {:HasAttr [2 400 1]} 2]}
+                                           {:HasAttr [0 600 1]}]]})}
+           (parser/compile-rules db rules)))))
 
 (deftest test-many-rule-bodies
   (let [rules '[[(subtype ?t1 ?t2) [?t2 :name "Object"]]
@@ -225,7 +232,7 @@
                                          {:HasAttr [1 700 0]}
                                          {:Join
                                           [{:HasAttr [1 700 3]} {:RuleExpr ["subtype" [3 0]]} 3]}]]})}
-           (df/plan-rules db rules)))))
+           (parser/compile-rules db rules)))))
 
 (deftest test-predicates
   (let [query    '[:find ?a1 ?a2
@@ -234,12 +241,10 @@
                    [?user :age ?a2]
                    [(< ?a1 ?a2)]]
         compiled (parser/compile-query db query)]
-    (is (= {:PredExpr
-            ["LT"
-             {:Project
-              [{:Join [{:HasAttr [0 200 1]}
-                       {:HasAttr [0 200 2]} 0]}
-               [1 2]]}]}
+    (is (= {:Project
+            [{:PredExpr
+              ["LT" [0 1] {:Join [{:HasAttr [2 200 1]} {:HasAttr [2 200 0]} 2]}]}
+             [0 1]]}
            (.-plan compiled)))))
 
 (deftest test-inputs
@@ -249,8 +254,45 @@
                    [?user :age ?age]
                    [(< ?age ?max-age)]]
         compiled (parser/compile-query db query)]
-    (is (= {:Project					
-            [{:Join [{:HasAttr [1 200 2]} {:PredExpr ["<" [2 0]]} 2]} [1 2]]}
+    (is (= {:PredExpr ["LT" [1 [:input 0]] {:HasAttr [0 200 1]}]}
            (.-plan compiled)))
     
-    (is (= {'?max-age 0} (.-in compiled)))))
+    (is (= {'?max-age [:input 0]} (.-in compiled)))))
+
+(deftest test-lww
+  (let [schema {:assign/time  {:db/valueType :Number}
+                :assign/key   {:db/valueType :Number}
+                :assign/value {:db/valueType :String}}
+        db     (df/create-db schema)
+        rules  '[[(older? ?t1 ?key)
+                  [?op :assign/key ?key] [?op :assign/time ?t1]
+                  [?op2 :assign/key ?key] [?op2 :assign/time ?t2]
+                  [(< ?t2 ?t1)]]
+
+                 [(lww ?key ?val)
+                  [?op :assign/time ?t]
+                  [?op :assign/key ?key]
+                  [?op :assign/value ?val]
+                  (not (older? ?t ?key))]]]
+    (is (= #{(parser/->Rule "older?"
+                            {:Project
+                             [{:PredExpr
+                               ["LT"
+                                [3 0]
+                                {:Join
+                                 [{:Join [{:HasAttr [2 100 3]} {:HasAttr [2 200 1]} 2]}
+                                  {:Join [{:HasAttr [4 100 0]} {:HasAttr [4 200 1]} 4]}
+                                  1]}]}
+                              [0 1]]})
+             (parser/->Rule "lww"
+                            {:Project
+                             [{:Join
+                               [{:Antijoin
+                                 [{:Join [{:HasAttr [3 300 1]} {:HasAttr [3 200 0]} 3]}
+                                  {:RuleExpr ["older?" [2 0]]}
+                                  0]}
+                                {:HasAttr [3 100 2]}
+                                3]}
+                              [0 1]]})}
+           (parser/compile-rules db rules)))))
+

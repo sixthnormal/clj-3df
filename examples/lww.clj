@@ -1,8 +1,8 @@
 (ns clj-3df.examples.lww
   (:require
    [clj-3df.core :refer [create-conn create-db exec!
-                         register-plan register-query
-                         plan-rules transact]]))
+                         register-plan register-query transact]]
+   [clj-3df.parser :refer [compile-rules]]))
 
 ;; LWW Register
 ;; https://speakerdeck.com/ept/data-structures-as-queries-expressing-crdts-using-datalog?slide=15
@@ -32,7 +32,7 @@
   '[[(older ?t1 ?key)
      #:assign{:key ?key :time ?t1}
      #:assign{:key ?key :time ?t2}
-     [(< ?t1 ?t2)]]
+     [(< ?t2 ?t1)]]
 
     [(lww ?key ?value)
      #:assign{:time ?t :key ?key :value ?value}

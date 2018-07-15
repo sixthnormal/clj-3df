@@ -64,7 +64,7 @@
    (let [compiled   (parser/compile-query db query)
          rules-plan (if (empty? rules)
                       []
-                      (parser/plan-rules db rules))]
+                      (parser/compile-rules db rules))]
      {:Register {:query_name name
                  :plan       (.-plan compiled)
                  :in         (.-in compiled)
