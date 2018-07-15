@@ -7,7 +7,7 @@
       :cljs [cljs.spec.alpha :as s])
    [aleph.http :as http]
    [manifold.stream :as stream]
-   [cheshire.core :as json]
+   [cheshire.core]
    [clj-3df.parser :as parser]))
 
 (defprotocol IDB
@@ -139,8 +139,10 @@
     conn))
 
 (defmacro exec! [conn & forms]
-  (cons 'do (for [form forms]
-              (list 'clojure.core/->> form '(json/generate-string) `(stream/put! ~conn)))))
+  (let [c (gensym)]
+    `(let [~c ~conn]
+       (do ~@(for [form forms]
+               `(clojure.core/->> ~form (cheshire.core/generate-string) (stream/put! ~c)))))))
 
 (comment
 
@@ -159,22 +161,14 @@
     (register-query db "test" '[:find ?e
                                 :where
                                 (or [?e :name "Mabel"]
-                                    (not [?e :name "Mabel"]))])
-    
-    (register-query db "test" '[:find ?e
-                                :where
-                                (and [?e :name "Mabel"]
-                                     (not [?e :name "Mabel"]))])
+                                    [?e :name "Dipper"])]))
 
-    (register-query db "test" '[:find ?e
-                                :where
-                                (not [?e :name "Mabel"])]))
-  
-  (transact db [{:db/id  1
-                 :name   "Dipper"
-                 :age    12
-                 :admin? true}
-                [:db/add 2 :friend 1]])
+  (exec! conn
+    (transact db [{:db/id  10
+                   :name   "Dipper"
+                   :age    12
+                   :admin? true}
+                  [:db/add 2 :friend 1]]))
   
   (exec! conn (transact db [[:db/add 1 :name "Dipper"]]))
   (exec! conn (transact db [[:db/add 2 :name "Mabel"]]))
