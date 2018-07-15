@@ -129,15 +129,14 @@
   (let [query '[:find ?e
                 :where [?e :age 12] (not [?e :name "Mabel"])]]
     (is (= {:Antijoin
-            [{:Filter [0 200 {:Number 12}]} {:Filter [0 100 {:String "Mabel"}]} 0]}
+            [{:Filter [0 200 {:Number 12}]} {:Filter [0 100 {:String "Mabel"}]} [0]]}
            (plan-query db query)))))
 
 (deftest test-fully-unbounded-not
   (let [query '[:find ?e
                 :where (not [?e :name "Mabel"])]]
     ;; @TODO Decide what is the right semantics here. Disallow or negate?
-    (is (= {:Negate {:Filter [0 100 {:String "Mabel"}]}}
-           (plan-query db query)))))
+    (is (thrown? Exception (plan-query db query)))))
 
 (deftest test-tautology
   (let [query '[:find ?e
@@ -167,7 +166,7 @@
     (is (= {:Antijoin
             [{:Filter [0 100 {:String "Mabel"}]}
              {:Filter [0 100 {:String "Mabel"}]}
-             0]}
+             [0]]}
            (plan-query db query)))))
 
 (deftest test-reachability
@@ -221,7 +220,9 @@
            (parser/compile-rules db rules)))))
 
 (deftest test-many-rule-bodies
-  (let [rules '[[(subtype ?t1 ?t2) [?t2 :name "Object"]]
+  (let [rules '[;; @TODO check whether datomic allows this
+                ;; [(subtype ?t1 ?t2) [?t2 :name "Object"]]
+                [(subtype ?t1 ?t2) [?t1 :name ?any] [?t2 :name "Object"]]
                 [(subtype ?t1 ?t2) [?t1 :name ?n] [?t2 :name ?n]]
                 [(subtype ?t1 ?t2) [?t1 :extends ?t2]]
                 [(subtype ?t1 ?t2) [?t1 :extends ?any] (subtype ?any ?t2)]]]
@@ -267,7 +268,7 @@
         rules  '[[(older? ?t1 ?key)
                   [?op :assign/key ?key] [?op :assign/time ?t1]
                   [?op2 :assign/key ?key] [?op2 :assign/time ?t2]
-                  [(< ?t2 ?t1)]]
+                  [(< ?t1 ?t2)]]
 
                  [(lww ?key ?val)
                   [?op :assign/time ?t]
@@ -278,7 +279,7 @@
                             {:Project
                              [{:PredExpr
                                ["LT"
-                                [3 0]
+                                [0 3]
                                 {:Join
                                  [{:Join [{:HasAttr [2 100 3]} {:HasAttr [2 200 1]} 2]}
                                   {:Join [{:HasAttr [4 100 0]} {:HasAttr [4 200 1]} 4]}
@@ -286,13 +287,13 @@
                               [0 1]]})
              (parser/->Rule "lww"
                             {:Project
-                             [{:Join
-                               [{:Antijoin
-                                 [{:Join [{:HasAttr [3 300 1]} {:HasAttr [3 200 0]} 3]}
-                                  {:RuleExpr ["older?" [2 0]]}
-                                  0]}
-                                {:HasAttr [3 100 2]}
-                                3]}
+                             [{:Antijoin
+                               [{:Join
+                                 [{:Join [{:HasAttr [2 300 1]} {:HasAttr [2 200 0]} 2]}
+                                  {:HasAttr [2 100 3]}
+                                  2]}
+                                {:RuleExpr ["older?" [3 0]]}
+                                [3 0]]}
                               [0 1]]})}
            (parser/compile-rules db rules)))))
 
