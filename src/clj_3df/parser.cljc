@@ -6,28 +6,24 @@
    #?(:clj [clojure.spec.alpha :as s]
       :cljs [cljs.spec.alpha :as s])))
 
-;; CONFIGURATION
-
-;; (timbre/merge-config! {:level :info})
+;; UTIL
 
 (def log-level :info)
 
 (defmacro info [& args]
-  (apply list 'println args))
+  `(println ~@args))
 
 (defmacro trace [& args]
   (when (= log-level :trace)
-    (apply list 'println args)))
-
-;; UTIL
-
-(def ^{:arglists '([pred] [pred coll])} separate (juxt filter remove))
+    `(println ~@args)))
 
 (defn- pipe-log
   ([ctx] (pipe-log ctx "log:"))
   ([ctx message]
    (info message ctx)
    ctx))
+
+(def ^{:arglists '([pred] [pred coll])} separate (juxt filter remove))
 
 ;; GRAMMAR
 
@@ -84,84 +80,38 @@
 ;; to unify two competing bindings in all possible contexts
 ;; (e.g. 'and', 'or', 'not').
 
-(s/def ::unification-method #{:unify/conjunction :unify/disjunction :unify/negation})
+(s/def ::unification-method #{:unify/conjunction :unify/disjunction})
 
 ;; 1. Step: In the first pass the tree of (potentially) nested,
 ;; context-modifying operators is navigated and all clauses are
 ;; extracted into a flat list. Context information is preserverd by
-;; tagging clauses.
+;; tagging clauses. Constant bindings are transformed into inputs.
 
 (s/def ::tag (s/tuple ::unification-method number?))
 
-(defrecord TaggingContext [clauses tag])
-(defrecord TaggedClause [id tag type clause])
+(defrecord NormalizationContext [inputs clauses tag])
+(defrecord Clause [id tag type symbols clause negated? deps plan])
+(defrecord Relation [tag symbols negated? deps plan]
+  Object
+  (toString [this] (str "Rel" symbols)))
 
-(defn- make-tagging-context
-  ([] (make-tagging-context [[:unify/conjunction :root]]))
-  ([root-tag] (TaggingContext. #{} root-tag)))
+(defn- make-normalization-context
+  ([] (make-normalization-context [[:unify/conjunction :root]]))
+  ([root-tag] (NormalizationContext. {} #{} root-tag)))
 
-(defn- tagged-clause [ctx type clause]
-  (TaggedClause. (. clojure.lang.RT (nextID)) (.-tag ctx) type clause))
+(defn- make-clause [^NormalizationContext ctx {:keys [type clause symbols plan] :as props}]
+  (map->Clause (merge {:id       (. clojure.lang.RT (nextID))
+                       :tag      (.-tag ctx)
+                       :negated? false
+                       :deps     nil}
+                      props)))
 
 (defn- generate-tag [method]
   [method (. clojure.lang.RT (nextID))])
 
-(defmulti tag-clauses (fn [ctx clause] (first clause)))
-
-(defmethod tag-clauses ::where [ctx [_ clauses]]
-  (reduce tag-clauses ctx clauses))
-
-(defmethod tag-clauses ::and [ctx [_ {:keys [clauses]}]]
-  (as-> ctx nested
-    (update nested :tag conj (generate-tag :unify/conjunction))
-    (reduce tag-clauses nested clauses)
-    (assoc ctx :clauses (.-clauses nested))))
-
-(defmethod tag-clauses ::or [ctx [_ {:keys [clauses]}]]
-  (as-> ctx nested
-    (update nested :tag conj (generate-tag :unify/disjunction))
-    (reduce tag-clauses nested clauses)
-    (assoc ctx :clauses (.-clauses nested))))
-
-(defmethod tag-clauses ::or-join [ctx [_ {:keys [symbols clauses]}]]
-  (as-> ctx nested
-    (update nested :tag conj (with-meta (generate-tag :unify/disjunction) {:projection symbols}))
-    (reduce tag-clauses nested clauses)
-    (assoc ctx :clauses (.-clauses nested))))
-
-(defmethod tag-clauses ::not [ctx [_ {:keys [clauses]}]]
-  (as-> ctx nested
-    (update nested :tag conj (generate-tag :unify/negation))
-    (reduce tag-clauses nested clauses)
-    (assoc ctx :clauses (.-clauses nested))))
-
-(defmethod tag-clauses ::pred-expr [ctx [_ predicate-expr]]
-  (update ctx :clauses conj (tagged-clause ctx ::pred-expr predicate-expr)))
-
-(defmethod tag-clauses ::lookup [ctx [_ clause]]
-  (update ctx :clauses conj (tagged-clause ctx ::lookup clause)))
-
-(defmethod tag-clauses ::entity [ctx [_ clause]]
-  (update ctx :clauses conj (tagged-clause ctx ::entity clause)))
-
-(defmethod tag-clauses ::hasattr [ctx [_ clause]]
-  (update ctx :clauses conj (tagged-clause ctx ::hasattr clause)))
-
-(defmethod tag-clauses ::filter [ctx [_ clause]]
-  (update ctx :clauses conj (tagged-clause ctx ::filter clause)))
-
-(defmethod tag-clauses ::rule-expr [ctx [_ clause]]
-  (update ctx :clauses conj (tagged-clause ctx ::rule-expr clause)))
-
-;; 2. Step: Now we walk the flat list of clauses and convert constant
-;; bindings to inputs.
-
-(defrecord NormalizationContext [clauses inputs])
-
-(defn- make-normalization-context [tagging-ctx]
-  (NormalizationContext. (.-clauses tagging-ctx) {}))
-
-(defn- const->in [args]
+(defn- const->in
+  "Transforms any constant arguments into inputs."
+  [args]
   (->> args
        (reduce
         (fn [state arg]
@@ -173,59 +123,102 @@
                   (update :normalized-args conj in)))))
         {:inputs {} :normalized-args []})))
 
-(defmulti normalize (fn [ctx clause] (.-type clause)))
+(defmulti normalize (fn [^NormalizationContext ctx clause] (first clause)))
 
-(defmethod normalize ::pred-expr [ctx tagged]
-  (let [[{:keys [predicate fn-args]}]    (.-clause tagged)
-        {:keys [inputs normalized-args]} (const->in fn-args)]
-    (as-> ctx ctx
-      (update ctx :inputs merge inputs)
-      (update ctx :clauses disj tagged)
-      (update ctx :clauses conj (assoc tagged :clause [{:predicate predicate
-                                                        :fn-args   normalized-args}])))))
+(defmethod normalize ::and [ctx [_ {:keys [clauses]}]]
+  (as-> ctx nested
+    (update nested :tag conj (generate-tag :unify/conjunction))
+    (reduce normalize nested clauses)
+    (assoc ctx :clauses (.-clauses nested))))
 
-;; actually handled in rust at the moment
-(defmethod normalize ::lookup [ctx tagged] ctx)
-(defmethod normalize ::entity [ctx tagged] ctx)
-(defmethod normalize ::hasattr [ctx tagged] ctx)
-(defmethod normalize ::filter [ctx tagged] ctx)
+(defmethod normalize ::or [ctx [_ {:keys [clauses]}]]
+  (as-> ctx nested
+    (update nested :tag conj (generate-tag :unify/disjunction))
+    (reduce normalize nested clauses)
+    (assoc ctx :clauses (.-clauses nested))))
 
-(defmethod normalize ::rule-expr [ctx tagged]
-  (let [{:keys [rule-name fn-args]}      (.-clause tagged)
-        {:keys [inputs normalized-args]} (const->in fn-args)]
-    (as-> ctx ctx
-      (update ctx :inputs merge inputs)
-      (update ctx :clauses disj tagged)
-      (update ctx :clauses conj (assoc tagged :clause {:rule-name rule-name
-                                                       :fn-args   normalized-args})))))
+(defmethod normalize ::or-join [ctx [_ {:keys [symbols clauses]}]]
+  (as-> ctx nested
+    (update nested :tag conj (with-meta (generate-tag :unify/disjunction) {:projection symbols}))
+    (reduce normalize nested clauses)
+    (assoc ctx :clauses (.-clauses nested))))
 
-;; 3. Step: Optimize clause order. @TODO
+(defmethod normalize ::not [ctx [_ {:keys [clauses]}]]
+  (as-> ctx nested
+    (update nested :tag conj (generate-tag :unify/conjunction))
+    (reduce normalize nested clauses)
+    (let [clauses (->> (.-clauses nested)
+                       (into #{} (map (fn [clause]
+                                        (if (contains? (.-clauses ctx) clause)
+                                          clause
+                                          (assoc clause
+                                                 :negated? true
+                                                 :deps (.-symbols clause)))))))]
+      (assoc ctx :clauses clauses))))
 
-(defn optimize [clauses] (into [] clauses))
+(defmethod normalize ::pred-expr [ctx [_ predicate-expr]]
+  (let [[{:keys [predicate fn-args]}]    predicate-expr
+        {:keys [inputs normalized-args]} (const->in fn-args)
+        tagged                           (make-clause ctx {:type    ::pred-expr
+                                                           :clause  [{:predicate predicate
+                                                                      :fn-args   normalized-args}]
+                                                           :symbols normalized-args
+                                                           :deps    (set normalized-args)})]
+    (-> ctx
+        (update :inputs merge inputs)
+        (update :clauses conj tagged))))
 
-;; 4. Step: Sort clauses according to any dependencies between them,
+(defmethod normalize ::lookup [ctx [_ [e a sym-v :as clause]]]
+  (update ctx :clauses conj (make-clause ctx {:type    ::lookup
+                                              :clause  clause
+                                              :symbols [sym-v]})))
+
+(defmethod normalize ::entity [ctx [_ [e sym-a sym-v :as clause]]]
+  (update ctx :clauses conj (make-clause ctx {:type    ::entity
+                                              :clause  clause
+                                              :symbols [sym-a sym-v]})))
+
+(defmethod normalize ::hasattr [ctx [_ [sym-e a sym-v :as clause]]]
+  (update ctx :clauses conj (make-clause ctx {:type    ::hasattr
+                                              :clause  clause
+                                              :symbols [sym-e sym-v]})))
+
+(defmethod normalize ::filter [ctx [_ [sym-e a v :as clause]]]
+  (update ctx :clauses conj (make-clause ctx {:type    ::filter
+                                              :clause  clause
+                                              :symbols [sym-e]})))
+
+(defmethod normalize ::rule-expr [ctx [_ rule-expr]]
+  (let [{:keys [rule-name fn-args]}      rule-expr
+        {:keys [inputs normalized-args]} (const->in fn-args)
+        tagged                           (make-clause ctx {:type    ::rule-expr
+                                                           :clause  {:rule-name rule-name
+                                                                     :fn-args   normalized-args}
+                                                           :symbols normalized-args})]
+    (-> ctx
+        (update :inputs merge inputs)
+        (update :clauses conj tagged))))
+
+;; 2. Step: Optimize clause order. @TODO
+
+;; (defn optimize [clauses] (into [] clauses))
+
+;; 3. Step: Sort clauses according to any dependencies between them,
 ;; ofcourse while attempting to preserve as much of the ordering from
 ;; the previous step. Dependencies occur, whenever a clause does not
 ;; produce bindings of its own, as is the case with ::pred-expr.
 
 (defn reorder [clauses]
-  (let [clauses       (->> clauses
-                           (sort-by (fn [tagged] (conj (.-tag tagged) (.-id tagged))))
-                           (reverse))
-        ;; [preds other] (separate (fn [tagged] (= (.-type tagged) ::pred-expr)) clauses)
-        ;clauses       (concat [] other preds)
-        ]
-    clauses))
+  (->> clauses
+       (sort-by (fn [tagged] (conj (.-tag tagged) (.-id tagged))))
+       (reverse)))
 
-;; 5. Step: Unification. We process the list until all conflicts are
+;; 4. Step: Unification. We process the list until all conflicts are
 ;; resolved. Clauses are in conflict iff they share one or more
 ;; symbols. Conflicts must be resolved according to the unification
 ;; method of the most specific (i.e. nested) context they share.
 
 (defrecord UnificationContext [symbols inputs attr->int relations deferred])
-(defrecord Relation [tag symbols plan]
-  Object
-  (toString [this] (str "Rel " (mapv str symbols) " " plan)))
 
 (defn- make-unification-context [db inputs]
   (UnificationContext. {} inputs (:attr->int db) #{} []))
@@ -262,7 +255,7 @@
 (defn- binds-all? [^Relation rel syms] (set/subset? syms (set (.-symbols rel))))
 
 (defn- shared-symbols [^Relation r1 ^Relation r2]
-  (set/intersection (set (:symbols r1)) (set (:symbols r2))))
+  (set/intersection (set (.-symbols r1)) (set (.-symbols r2))))
 
 (defn- conflicting? [^Relation r1 ^Relation r2]
   (some? (seq (shared-symbols r1 r2))))
@@ -290,29 +283,31 @@
 (defn- join
   "Unifies two conflicting relations by equi-joining them."
   [^UnificationContext ctx r1 r2]
-  (trace "joining" (:plan r1) (:plan r2))
+  (trace "joining" r1 r2)
   (let [shared      (shared-symbols r1 r2)
         ;; @TODO join on more than one variable
         join-sym    (first shared)
-        result-syms (concat [join-sym] (remove shared (:symbols r1)) (remove shared (:symbols r2)))
-        plan        {:Join [(:plan r1) (:plan r2) (resolve ctx join-sym)]}]
-    (Relation. (shared-context (.-tag r1) (.-tag r2)) result-syms plan)))
+        result-syms (concat [join-sym] (remove shared (.-symbols r1)) (remove shared (.-symbols r2)))
+        plan        {:Join [(.-plan r1) (.-plan r2) (resolve ctx join-sym)]}
+        deps        (set/union (.-deps r1) (.-deps r2))]
+    (->Relation (shared-context (.-tag r1) (.-tag r2)) result-syms false deps plan)))
 
 (defn- antijoin
   "Unifies two conflicting relations by anti-joining them."
   [^UnificationContext ctx r1 r2]
   (trace "anti-joining" (:plan r1) (:plan r2))
-  (let [shared      (shared-symbols r1 r2)
-        join-sym    (first shared)
-        result-syms (concat [join-sym] (remove shared (:symbols r1)) (remove shared (:symbols r2)))
-        plan        {:Antijoin [(:plan r1) (:plan r2) (resolve ctx join-sym)]}]
-    (Relation. (shared-context (.-tag r1) (.-tag r2)) result-syms plan)))
+  (let [shared-syms (shared-symbols r1 r2)
+        join-syms   (into [] shared-syms)
+        result-syms (concat join-syms (remove shared-syms (:symbols r1)))
+        plan        {:Antijoin [(:plan r1) (:plan r2) (resolve-all ctx join-syms)]}
+        deps        (set/union (.-deps r1) (.-deps r2))]
+    (->Relation (shared-context (.-tag r1) (.-tag r2)) result-syms false deps plan)))
 
-(defn- merge-unions [r1 r2]
-  (let [[resolved-syms plans] (get-in r1 [:plan :Union])]
-    (Relation. (shared-context (.-tag r1) (.-tag r2))
-               (:symbols r1)
-               {:Union [resolved-syms (conj plans (:plan r2))]})))
+(defn- merge-unions [^Relation r1 ^Relation r2]
+  (let [[resolved-syms plans] (get-in r1 [:plan :Union])
+        deps                  (set/union (.-deps r1) (.-deps r2))
+        plan                  {:Union [resolved-syms (conj plans (:plan r2))]}]
+    (->Relation (shared-context (.-tag r1) (.-tag r2)) (.-symbols r1) false deps plan)))
 
 (defn- union
   "Unifies two conflicting relations by taking their union."
@@ -326,49 +321,45 @@
                                         {:r1 r1 :r2 r2})))
         resolved-syms (resolve-all ctx symbols)
         union?        (fn [rel] (= (get-in rel [:plan :Union 0]) resolved-syms))
-        [r1 r2]       (cond
-                        (and (union? r1)
-                             (union? r2)) (throw (ex-info "Shouldn't be unifying two unions." {:r1 r1 :r2 r2}))
-                        (union? r1)       [r1 r2]
-                        (union? r2)       [r2 r1]
-                        :else             [(Relation. shared-ctx
-                                                      symbols
-                                                      {:Union [resolved-syms [(:plan r1)]]}) r2])]
+        
+        [r1 r2] (cond
+                  (and (union? r1)
+                       (union? r2)) (throw (ex-info "Shouldn't be unifying two unions." {:r1 r1 :r2 r2}))
+                  (union? r1)       [r1 r2]
+                  (union? r2)       [r2 r1]
+                  :else             (let [deps (.-deps r1)
+                                          plan {:Union [resolved-syms [(.-plan r1)]]}]
+                                      [(->Relation shared-ctx symbols false deps plan) r2]))]
     (merge-unions r1 r2)))
 
-(defn- project [^UnificationContext ctx symbols rel]
-  (if (= (.-symbols rel) symbols)
+(defn- project [^UnificationContext ctx target-syms ^Relation {:keys [tag symbols negated? plan deps] :as rel}]
+  (if (= symbols target-syms)
     rel
-    (Relation. (.-tag rel) symbols {:Project [(:plan rel) (resolve-all ctx symbols)]})))
+    (->Relation tag target-syms negated? deps {:Project [plan (resolve-all ctx target-syms)]})))
 
 (defn- introduceable?
   "Checks whether all conditions are met for a clause to be applied."
-  [^UnificationContext ctx ^TaggedClause {:keys [type clause]}]
-  (case type
-    ::pred-expr (let [[{:keys [predicate fn-args]}] clause
-                      deps                          (into #{} (remove (.-inputs ctx)) fn-args)]
-                  (some #(binds-all? % deps) (.-relations ctx)))
-    true))
+  [^UnificationContext {:keys [inputs relations]} ^Relation {:keys [deps]}]
+  (if (nil? deps)
+    true
+    (let [deps (into #{} (remove inputs) deps)]
+      (some #(binds-all? % deps) relations))))
 
 (defn- plan-clause
   "Maps clauses to relations."
-  [^UnificationContext ctx ^TaggedClause {:keys [type clause tag]}]
-  (let [resolve  (partial resolve ctx)
-        attr-id  (partial attr-id ctx)]
-    (case type
-      ::lookup    (let [[e a sym-v] clause]
-                    (Relation. tag [sym-v] {:Lookup [e (attr-id a) (resolve sym-v)]}))
-      ::entity    (let [[e sym-a sym-v] clause]
-                    (Relation. tag [sym-a sym-v] {:Entity [e (resolve sym-a) (resolve sym-v)]}))
-      ::hasattr   (let [[sym-e a sym-v] clause]
-                    (Relation. tag [sym-e sym-v] {:HasAttr [(resolve sym-e) (attr-id a) (resolve sym-v)]}))
-      ::filter    (let [[sym-e a v] clause]
-                    (Relation. tag [sym-e] {:Filter [(resolve sym-e) (attr-id a) (render-value v)]}))
-      ::rule-expr (let [{:keys [rule-name fn-args]} clause]
-                    (Relation. tag fn-args {:RuleExpr [(str rule-name) (resolve-all ctx fn-args)]})))))
+  [^UnificationContext ctx ^Clause {:keys [tag type symbols clause negated? deps]}]
+  (let [resolve (partial resolve ctx)
+        attr-id (partial attr-id ctx)
+        plan    (case type
+                  ::lookup    (let [[e a sym-v] clause] {:Lookup [e (attr-id a) (resolve sym-v)]})
+                  ::entity    (let [[e sym-a sym-v] clause] {:Entity [e (resolve sym-a) (resolve sym-v)]})
+                  ::hasattr   (let [[sym-e a sym-v] clause] {:HasAttr [(resolve sym-e) (attr-id a) (resolve sym-v)]})
+                  ::filter    (let [[sym-e a v] clause] {:Filter [(resolve sym-e) (attr-id a) (render-value v)]})
+                  ::rule-expr (let [{:keys [rule-name fn-args]} clause] {:RuleExpr [(str rule-name) (resolve-all ctx fn-args)]}))]
+    (->Relation tag symbols negated? deps plan)))
 
 (defn- unify-with
-  [^UnificationContext ctx ^TaggedClause tagged]
+  [^UnificationContext ctx ^Clause tagged]
   (let [rel                (plan-clause ctx tagged)
         _                  (trace "unifying" (str rel))
         ;; for optimization purposes we do want to aggregate here, but
@@ -382,13 +373,8 @@
                               (fn [rel conflicting]
                                 (let [shared-ctx (shared-context (.-tag rel) (.-tag conflicting))
                                       [method _] (last shared-ctx)
-                                      negated?   (fn [rel]
-                                                   (true?
-                                                    (->> (.-tag rel)
-                                                         (drop (count shared-ctx))
-                                                         (some (fn [[method _]] (= :unify/negation method))))))
-                                      _          (trace "method" method (negated? rel) (negated? conflicting))
-                                      rel'       (case [method (negated? rel) (negated? conflicting)]
+                                      _          (trace "method" method (.-negated? rel) (.-negated? conflicting))
+                                      rel'       (case [method (.-negated? rel) (.-negated? conflicting)]
                                                    [:unify/conjunction false false] (join ctx conflicting rel)
                                                    [:unify/conjunction false true]  (antijoin ctx rel conflicting)
                                                    [:unify/conjunction true false]  (antijoin ctx conflicting rel)
@@ -400,39 +386,12 @@
     (trace "unified" (conj (set free) unified))
     (assoc ctx :relations (conj (set free) unified))))
 
-(defmulti introduce-clause (fn [^UnificationContext ctx tagged] (.-type tagged)))
+(defmulti introduce-clause (fn [^UnificationContext ctx ^Clause tagged] (.-type tagged)))
 
-(defmethod introduce-clause ::lookup [ctx tagged]
-  (let [[e a sym-v] (.-clause tagged)]
-    (as-> ctx ctx
-      (introduce-symbol ctx sym-v)
-      (unify-with ctx tagged))))
-
-(defmethod introduce-clause ::entity [ctx tagged]
-  (let [[e sym-a sym-v] (.-clause tagged)]
-    (as-> ctx ctx
-      (introduce-symbol ctx sym-a)
-      (introduce-symbol ctx sym-v)
-      (unify-with ctx tagged))))
-
-(defmethod introduce-clause ::hasattr [ctx tagged]
-  (let [[sym-e a sym-v] (.-clause tagged)]
-    (as-> ctx ctx
-      (introduce-symbol ctx sym-e)
-      (introduce-symbol ctx sym-v)
-      (unify-with ctx tagged))))
-
-(defmethod introduce-clause ::filter [ctx tagged]
-  (let [[sym-e a v] (.-clause tagged)]
-    (as-> ctx ctx
-      (introduce-symbol ctx sym-e)
-      (unify-with ctx tagged))))
-
-(defmethod introduce-clause ::rule-expr [ctx tagged]
-  (let [{:keys [rule-name fn-args]} (.-clause tagged)]
-    (as-> ctx ctx
-      (reduce introduce-symbol ctx fn-args)
-      (unify-with ctx tagged))))
+(defmethod introduce-clause :default [^UnificationContext ctx ^Clause tagged]
+  (as-> ctx ctx
+    (reduce introduce-symbol ctx (.-symbols tagged))
+    (unify-with ctx tagged)))
 
 (defmethod introduce-clause ::pred-expr [ctx {:keys [clause tag]}]
   ;; assume for now, that input symbols are bound at this point
@@ -450,12 +409,12 @@
             wrapped (update rel :plan wrap)]
         (assoc ctx :relations (conj (set other) wrapped))))))
 
-(defn- skip-clause [^UnificationContext ctx ^TaggedClause tagged]
-  (trace "skipping" (.-type tagged))
-  (update ctx :deferred conj tagged))
+(defn- skip-clause [^UnificationContext ctx ^Clause clause]
+  (trace "skipping" (.-type clause))
+  (update ctx :deferred conj clause))
 
 (defn unify [ctx clauses]
-  (let [clauses         (reorder clauses)
+  (let [clauses         (reorder clauses) ;; @TODO should eventually be redundant...
         process-clauses (fn [ctx clauses]
                           (reduce (fn [ctx clause]
                                     (if (introduceable? ctx clause)
@@ -472,7 +431,7 @@
             (= (.-deferred ctx') clauses) (throw (ex-info "Un-introducable clauses" {:clauses (.-deferred ctx') :ctx ctx'}))
             :else                         (recur ctx' (.-deferred ctx'))))))))
 
-;; 6. Step: Resolve find specification.
+;; 5. Step: Resolve find specification.
 
 (defmulti impl-find (fn [ctx find-spec] (first find-spec)))
 
@@ -514,11 +473,9 @@
 
 (defn compile-query [db query]
   (let [ir                       (parse-query query)
-        {:keys [clauses inputs]} (as-> (tag-clauses (make-tagging-context) [::where (:where ir)]) ctx
-                                   (make-normalization-context ctx)
-                                   (reduce normalize ctx (.-clauses ctx)))
+        {:keys [clauses inputs]} (reduce normalize (make-normalization-context) (:where ir))
         inputs                   (merge inputs (zipmap (:in ir) (map #(vector :input %) (range))))
-        ordered-clauses          (->> clauses (optimize) (reorder))
+        ordered-clauses          (->> clauses (reorder))
         find-symbols             (->> (:find ir) second (mapv second))
         unification-ctx          (as-> (make-unification-context db inputs) ctx
                                    (reduce introduce-symbol ctx find-symbols)
@@ -546,19 +503,17 @@
         rewrite-rule      (fn [rewritten head rules]
                             (let [wrapped-clauses (map (comp wrap-and get-clauses) rules)]
                               (if (= (count rules) 1)
-                                (assoc rewritten head [::where (get-clauses (first rules))])
-                                (assoc rewritten head [::where [[::or-join {:symbols (:vars head)
-                                                                            :clauses wrapped-clauses}]]]))))
+                                (assoc rewritten head (get-clauses (first rules)))
+                                (assoc rewritten head [[::or-join {:symbols (:vars head)
+                                                                   :clauses wrapped-clauses}]]))))
         rewritten         (reduce-kv rewrite-rule {} by-head)
         
         compile-rewritten (fn [compiled head ir]
                             (let [{:keys [inputs clauses]}
-                                  (as-> (tag-clauses (make-tagging-context) ir) ctx
-                                    (make-normalization-context ctx)
-                                    (reduce normalize ctx (.-clauses ctx)))
+                                  (reduce normalize (make-normalization-context) ir)
 
                                   ordered-clauses
-                                  (->> clauses (optimize) (reorder))
+                                  (->> clauses (reorder))
                                   
                                   unification-ctx
                                   (as-> (make-unification-context db inputs) ctx
