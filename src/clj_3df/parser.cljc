@@ -4,12 +4,20 @@
    [clojure.string :as str]
    [clojure.set :as set]
    #?(:clj [clojure.spec.alpha :as s]
-      :cljs [cljs.spec.alpha :as s])
-   [taoensso.timbre :as timbre :refer [trace info]]))
+      :cljs [cljs.spec.alpha :as s])))
 
 ;; CONFIGURATION
 
-(timbre/merge-config! {:level :trace})
+;; (timbre/merge-config! {:level :info})
+
+(def log-level :info)
+
+(defmacro info [& args]
+  (apply list 'println args))
+
+(defmacro trace [& args]
+  (when (= log-level :trace)
+    (apply list 'println args)))
 
 ;; UTIL
 
@@ -379,7 +387,7 @@
                                                     (->> (.-tag rel)
                                                          (drop (count shared-ctx))
                                                          (some (fn [[method _]] (= :unify/negation method))))))
-                                      _          (info "method" method (negated? rel) (negated? conflicting))
+                                      _          (trace "method" method (negated? rel) (negated? conflicting))
                                       rel'       (case [method (negated? rel) (negated? conflicting)]
                                                    [:unify/conjunction false false] (join ctx conflicting rel)
                                                    [:unify/conjunction false true]  (antijoin ctx rel conflicting)
