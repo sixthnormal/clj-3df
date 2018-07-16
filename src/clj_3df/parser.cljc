@@ -353,12 +353,14 @@
 
 (defn- aggregate
   [^UnificationContext ctx aggregation-fn target-syms ^Relation {:keys [tag symbols negated? plan deps]}]
+  (trace "aggregate" aggregation-fn target-syms)
   (if-not (bound-together? ctx target-syms)
     (throw (ex-info "All aggregate arguments must be bound by a single relation." {:ctx ctx :args target-syms}))
     (let [plan {:Aggregate [(name aggregation-fn) plan (resolve-all ctx target-syms)]}]
       (->Relation tag symbols negated? (set/union deps target-syms) plan))))
 
 (defn- project [^UnificationContext ctx target-syms ^Relation {:keys [tag symbols negated? plan deps] :as rel}]
+  (trace "project" target-syms)
   (cond
     (= symbols target-syms)            rel ; relation already matches the projection
     (not (all-bound? ctx target-syms)) (throw (ex-info "Find spec contains unbound symbols."
@@ -467,7 +469,7 @@
 
 (defmethod impl-find ::find-rel [ctx [_ find-elems :as find-spec]]
   (let [;; aggregates need to be resolved prior to projecting
-        ;; ctx                   (reduce impl-find ctx find-elems)
+        ctx                   (reduce impl-find ctx find-elems)
         symbols               (extract-find-symbols find-spec)
         [relevant irrelevant] (separate #(binds-all? % symbols) (.-relations ctx))]
     ;; there can only ever be a single relevant relation at this point
@@ -477,14 +479,14 @@
 
 (defmethod impl-find :var [ctx _] ctx)
 
-(defmethod impl-find :aggregate [ctx {:keys [aggregation-fn fn-args]}]
+(defmethod impl-find :aggregate [ctx [_ {:keys [aggregation-fn fn-args]}]]
   (let [{:keys [inputs normalized-args]} (const->in fn-args)
         [relevant irrelevant]            (separate #(binds-all? % normalized-args) (.-relations ctx))]
     ;; there can only ever be a single relevant relation at this point
-    (as-> ctx ctx
-      (update ctx :inputs merge inputs)
-      (assoc ctx :relations (set irrelevant))
-      (update ctx :relations conj (aggregate ctx aggregation-fn normalized-args (first relevant))))))
+    (-> ctx
+        (update :inputs merge inputs)
+        (assoc :relations (set irrelevant))
+        (update :relations conj (aggregate ctx aggregation-fn normalized-args (first relevant))))))
 
 ;; PUBLIC API
 
