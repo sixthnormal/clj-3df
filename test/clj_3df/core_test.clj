@@ -297,3 +297,9 @@
                               [0 1]]})}
            (parser/compile-rules db rules)))))
 
+(deftest test-min
+  (let [query    '[:find ?user (min ?age)
+                   :where [?user :age ?age]]
+        compiled (parser/compile-query db query)]
+    (is (= {}
+           (.-plan compiled)))))

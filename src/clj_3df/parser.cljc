@@ -32,7 +32,7 @@
 
 (s/def ::find (s/alt ::find-rel ::find-rel))
 (s/def ::find-rel (s/+ ::find-elem))
-(s/def ::find-elem (s/or :var ::variable))
+(s/def ::find-elem (s/or :var ::variable :aggregate ::aggregate))
 
 (s/def ::in (s/+ ::variable))
 
@@ -43,16 +43,14 @@
         ::or (s/cat :marker #{'or} :clauses (s/+ ::clause))
         ::or-join (s/cat :marker #{'or-join} :symbols (s/and vector? (s/+ ::variable)) :clauses (s/+ ::clause))
         ::not (s/cat :marker #{'not} :clauses (s/+ ::clause))
-        ::pred-expr (s/tuple (s/cat :predicate ::predicate
-                                    :fn-args (s/+ (s/or :var ::variable
-                                                        :const ::value))))
+        ::pred-expr (s/tuple (s/cat :predicate ::predicate :fn-args (s/+ ::fn-arg)))
         ::lookup (s/tuple ::eid keyword? ::variable)
         ::entity (s/tuple ::eid ::variable ::variable)
         ::hasattr (s/tuple ::variable keyword? ::variable)
         ::filter (s/tuple ::variable keyword? ::value)
-        ::rule-expr (s/cat :rule-name ::rule-name
-                           :fn-args (s/+ (s/or :var ::variable
-                                               :const ::value)))))
+        ::rule-expr (s/cat :rule-name ::rule-name :fn-args (s/+ ::fn-arg))))
+
+(s/def ::aggregate (s/cat :aggregation-fn ::aggregation-fn :fn-args (s/+ ::fn-arg)))
 
 (s/def ::rules (s/and vector? (s/+ ::rule)))
 (s/def ::rule (s/and vector?
@@ -70,8 +68,8 @@
                      :string string?
                      :bool   boolean?))
 (s/def ::predicate '#{<= < > >= = not=})
-
-(defn- is-var? [[tag _]] (= tag :var))
+(s/def ::aggregation-fn '#{min})
+(s/def ::fn-arg (s/or :var ::variable :const ::value))
 
 ;; QUERY PLAN GENERATION
 
@@ -114,13 +112,13 @@
   [args]
   (->> args
        (reduce
-        (fn [state arg]
-          (if (is-var? arg)
-            (update state :normalized-args conj (second arg))
-            (let [in (gensym "?in_")]
-              (-> state
-                  (update :inputs assoc in arg)
-                  (update :normalized-args conj in)))))
+        (fn [state [typ arg]]
+          (case typ
+            :var   (update state :normalized-args conj arg)
+            :const (let [in (gensym "?in_")]
+                     (-> state
+                         (update :inputs assoc in [:const arg])
+                         (update :normalized-args conj in)))))
         {:inputs {} :normalized-args []})))
 
 (defmulti normalize (fn [^NormalizationContext ctx clause] (first clause)))
@@ -254,6 +252,27 @@
 (defn- binds? [^Relation rel sym] (some #{sym} (.-symbols rel)))
 (defn- binds-all? [^Relation rel syms] (set/subset? syms (set (.-symbols rel))))
 
+(defn- bound?
+  "Returns true iff the specified symbol is bound by a relation."
+  [^UnificationContext {:keys [inputs relations]} symbol]
+  (or (contains? inputs symbol)
+      (some? (some #(binds? % symbol) relations))))
+
+(defn- all-bound?
+  "Returns true iff all specified symbols are bound by a relation."
+  [^UnificationContext ctx symbols]
+  (every? #(bound? ctx %) symbols))
+
+(defn- bound-together?
+  "Returns true iff the specified symbols appear together inside a
+  single relation. This is therefore a stronger condition than
+  all-bound?, as required by aggregates."
+  [^UnificationContext {:keys [inputs relations]} symbols]
+  (if (nil? symbols)
+    true
+    (let [deps (into #{} (remove inputs) symbols)]
+      (some #(binds-all? % deps) relations))))
+
 (defn- shared-symbols [^Relation r1 ^Relation r2]
   (set/intersection (set (.-symbols r1)) (set (.-symbols r2))))
 
@@ -332,18 +351,23 @@
                                       [(->Relation shared-ctx symbols false deps plan) r2]))]
     (merge-unions r1 r2)))
 
-(defn- project [^UnificationContext ctx target-syms ^Relation {:keys [tag symbols negated? plan deps] :as rel}]
-  (if (= symbols target-syms)
-    rel
-    (->Relation tag target-syms negated? deps {:Project [plan (resolve-all ctx target-syms)]})))
+(defn- aggregate
+  [^UnificationContext ctx aggregation-fn target-syms ^Relation {:keys [tag symbols negated? plan deps]}]
+  (if-not (bound-together? ctx target-syms)
+    (throw (ex-info "All aggregate arguments must be bound by a single relation." {:ctx ctx :args target-syms}))
+    (let [plan {:Aggregate [(name aggregation-fn) plan (resolve-all ctx target-syms)]}]
+      (->Relation tag symbols negated? (set/union deps target-syms) plan))))
 
-(defn- introduceable?
-  "Checks whether all conditions are met for a clause to be applied."
-  [^UnificationContext {:keys [inputs relations]} ^Relation {:keys [deps]}]
-  (if (nil? deps)
-    true
-    (let [deps (into #{} (remove inputs) deps)]
-      (some #(binds-all? % deps) relations))))
+(defn- project [^UnificationContext ctx target-syms ^Relation {:keys [tag symbols negated? plan deps] :as rel}]
+  (cond
+    (= symbols target-syms)            rel ; relation already matches the projection
+    (not (all-bound? ctx target-syms)) (throw (ex-info "Find spec contains unbound symbols."
+                                                       {:unbound   (into [] (remove #(bound? ctx %)) target-syms)
+                                                        :relations (.-relations ctx)
+                                                        :ctx       ctx}))
+    :else
+    (let [plan {:Project [plan (resolve-all ctx target-syms)]}]
+      (->Relation tag target-syms negated? (set/union deps target-syms) plan))))
 
 (defn- plan-clause
   "Maps clauses to relations."
@@ -417,7 +441,7 @@
   (let [clauses         (reorder clauses) ;; @TODO should eventually be redundant...
         process-clauses (fn [ctx clauses]
                           (reduce (fn [ctx clause]
-                                    (if (introduceable? ctx clause)
+                                    (if (bound-together? ctx (.-deps clause))
                                       (introduce-clause ctx clause)
                                       (skip-clause ctx clause))) ctx clauses))
         ctx             (process-clauses ctx clauses)]
@@ -433,23 +457,34 @@
 
 ;; 5. Step: Resolve find specification.
 
-(defmulti impl-find (fn [ctx find-spec] (first find-spec)))
+(defn- extract-find-symbols [[typ pattern]]
+  (case typ
+    ::find-rel (mapcat extract-find-symbols pattern)
+    :var       [pattern]
+    :aggregate (mapcat extract-find-symbols (:fn-args pattern))))
 
-(defmethod impl-find ::find [ctx [_ find-spec]] (impl-find ctx find-spec))
+(defmulti impl-find (fn [^UnificationContext ctx find-spec] (first find-spec)))
 
-(defmethod impl-find ::find-rel [ctx [_ syms]]
-  (let [[bound unbound]       (separate (fn [sym] (some #(binds? % sym) (.-relations ctx))) (map second syms))
-        relevant?             (fn [rel]
-                                (some? (set/intersection (set (.-symbols rel)) (set bound))))
-        [relevant irrelevant] (separate relevant? (.-relations ctx))]
-    (cond
-      (seq unbound)          (throw (ex-info "Find spec contains unbound symbols." {:unbound unbound :ctx ctx}))
-      (empty? relevant)      (throw (ex-info "Find spec doesn't match any symbols." {:find-symbols syms}))
-      (> (count relevant) 1) (throw (ex-info "Projecting across multiple relations is not yet supported." ctx))
-      :else
-      (as-> ctx ctx
-        (assoc ctx :relations (set irrelevant))
-        (update ctx :relations conj (project ctx bound (first relevant)))))))
+(defmethod impl-find ::find-rel [ctx [_ find-elems :as find-spec]]
+  (let [;; aggregates need to be resolved prior to projecting
+        ;; ctx                   (reduce impl-find ctx find-elems)
+        symbols               (extract-find-symbols find-spec)
+        [relevant irrelevant] (separate #(binds-all? % symbols) (.-relations ctx))]
+    ;; there can only ever be a single relevant relation at this point
+    (-> ctx
+        (assoc :relations (set irrelevant))
+        (update :relations conj (project ctx symbols (first relevant))))))
+
+(defmethod impl-find :var [ctx _] ctx)
+
+(defmethod impl-find :aggregate [ctx {:keys [aggregation-fn fn-args]}]
+  (let [{:keys [inputs normalized-args]} (const->in fn-args)
+        [relevant irrelevant]            (separate #(binds-all? % normalized-args) (.-relations ctx))]
+    ;; there can only ever be a single relevant relation at this point
+    (as-> ctx ctx
+      (update ctx :inputs merge inputs)
+      (assoc ctx :relations (set irrelevant))
+      (update ctx :relations conj (aggregate ctx aggregation-fn normalized-args (first relevant))))))
 
 ;; PUBLIC API
 
@@ -476,11 +511,11 @@
         {:keys [clauses inputs]} (reduce normalize (make-normalization-context) (:where ir))
         inputs                   (merge inputs (zipmap (:in ir) (map #(vector :input %) (range))))
         ordered-clauses          (->> clauses (reorder))
-        find-symbols             (->> (:find ir) second (mapv second))
+        find-symbols             (extract-find-symbols (:find ir))
         unification-ctx          (as-> (make-unification-context db inputs) ctx
                                    (reduce introduce-symbol ctx find-symbols)
                                    (unify ctx ordered-clauses)
-                                   (impl-find ctx [::find (:find ir)]))
+                                   (impl-find ctx (:find ir)))
         plan                     (-> unification-ctx extract-relation :plan)]
     (CompiledQuery. plan inputs)))
 
