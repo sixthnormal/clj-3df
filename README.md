@@ -76,11 +76,13 @@ derived information will always have a consistent view of the data.
 
 ## Query Language Features
 
-- [x] Basic datalog expressions (e.g. implicit joins)
-- [x] `not`, `not-join`, `or`, `or-join` clauses
+- [x] Implicit joins and unions, `and` / `or` operators
+- [x] Stratified negation
 - [ ] Parameterized queries
 - [x] Rules, self-referential / mutually recursive rules
-- [ ] Aggregates
+- [x] Basic aggregates (min, max, count)
+- [ ] Grouping via `:with`
+- [x] Basic predicates (<=, <, >, >=, =, not=)
 - [ ] As-of queries
 - [ ] More find specifications (e.g. collection, scalar)
 - [ ] Pull queries
