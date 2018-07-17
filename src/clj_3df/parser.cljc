@@ -68,7 +68,7 @@
                      :string string?
                      :bool   boolean?))
 (s/def ::predicate '#{<= < > >= = not=})
-(s/def ::aggregation-fn '#{min})
+(s/def ::aggregation-fn '#{min max count})
 (s/def ::fn-arg (s/or :var ::variable :const ::value))
 
 ;; QUERY PLAN GENERATION
@@ -356,7 +356,7 @@
   (trace "aggregate" aggregation-fn target-syms)
   (if-not (bound-together? ctx target-syms)
     (throw (ex-info "All aggregate arguments must be bound by a single relation." {:ctx ctx :args target-syms}))
-    (let [plan {:Aggregate [(name aggregation-fn) plan (resolve-all ctx target-syms)]}]
+    (let [plan {:Aggregate [(str/upper-case (name aggregation-fn)) plan (resolve-all ctx target-syms)]}]
       (->Relation tag symbols negated? (set/union deps target-syms) plan))))
 
 (defn- project [^UnificationContext ctx target-syms ^Relation {:keys [tag symbols negated? plan deps] :as rel}]

@@ -301,5 +301,5 @@
   (let [query    '[:find ?user (min ?age)
                    :where [?user :age ?age]]
         compiled (parser/compile-query db query)]
-    (is (= {:Aggregate ["min" {:HasAttr [0 200 1]} [1]]}
+    (is (= {:Aggregate ["MIN" {:HasAttr [0 200 1]} [1]]}
            (.-plan compiled)))))
