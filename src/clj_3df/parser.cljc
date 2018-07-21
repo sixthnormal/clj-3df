@@ -7,6 +7,7 @@
 
 ;; UTIL
 
+(def debug? false)
 (def log-level :info)
 
 (defmacro info [& args]
@@ -15,6 +16,11 @@
 (defmacro trace [& args]
   (when (= log-level :trace)
     `(println ~@args)))
+
+(defmacro trace-bindings [msg bindings]
+  (when (= log-level :trace)
+    `(do (println ~msg)
+         (clojure.pprint/pprint (mapv plan ~bindings)))))
 
 (defn- pipe-log
   ([ctx] (pipe-log ctx "log:"))
@@ -132,11 +138,16 @@
   IBinding
   (bound-symbols [rel] (.-symbols rel))
   (plan [{:keys [type pattern]}]
-    (case type
-      ::lookup  (let [[e a sym-v] pattern] {:Lookup [e a sym-v]})
-      ::entity  (let [[e sym-a sym-v] pattern] {:Entity [e sym-a sym-v]})
-      ::hasattr (let [[sym-e a sym-v] pattern] {:HasAttr [sym-e a sym-v]})
-      ::filter  (let [[sym-e a [_ v]] pattern] {:Filter [sym-e a v]}))))
+    (let [encode-value (fn [v]
+                         (cond
+                           (string? v)  {:String v}
+                           (number? v)  {:Number v}
+                           (boolean? v) {:Bool v}))]
+      (case type
+        ::lookup  (let [[e a sym-v] pattern] {:Lookup [e a sym-v]})
+        ::entity  (let [[e sym-a sym-v] pattern] {:Entity [e sym-a sym-v]})
+        ::hasattr (let [[sym-e a sym-v] pattern] {:HasAttr [sym-e a sym-v]})
+        ::filter  (let [[sym-e a [_ v]] pattern] {:Filter [sym-e a (encode-value v)]})))))
 
 (defrecord RuleExpr [rule-name symbols]
   IBinding
@@ -155,7 +166,9 @@
           symbols          (bound-symbols this)]
       (if (some? binding)
         {:PredExpr [(encode-predicate predicate) args (plan binding)]}
-        (throw (ex-info "All predicate inputs must be bound in a single relation." {:binding this}))))))
+        (if debug?
+          {:PredExpr [(encode-predicate predicate) args :_]}
+          (throw (ex-info "All predicate inputs must be bound in a single relation." {:binding this})))))))
 
 (defrecord Aggregation [fn-symbol args binding]
   IBinding
@@ -164,17 +177,23 @@
   (plan [this]
     (if (some? binding)
       {:Aggregate [(str/upper-case (name fn-symbol)) (plan binding) args]}
-      (throw (ex-info "All aggregate arguments must be bound by a single relation." {:binding this})))))
+      (if debug?
+        {:Aggregate [(str/upper-case (name fn-symbol)) :_ args]}
+        (throw (ex-info "All aggregate arguments must be bound by a single relation." {:binding this}))))))
 
 (defrecord Projection [symbols binding]
   IBinding
   (bound-symbols [this] symbols)
   (plan [this]
-    (if (some? binding)
-      (if (= (bound-symbols this) (bound-symbols binding))
-        (plan binding)
-        {:Project [(plan binding) (bound-symbols this)]})
-      (throw (ex-info "Projection on unbound symbols." {:binding this})))))
+    (let [symbols (bound-symbols this)]
+      (if (some? binding)
+        (cond
+          (= symbols (bound-symbols binding)) (plan binding)
+          (binds-all? binding symbols)        {:Project [(plan binding) symbols]}
+          debug?                              {:Project [(plan binding) symbols]})
+        (if debug?
+          {:Project [:_ symbols]}
+          (throw (ex-info "Projection on unbound symbols." {:binding this})))))))
 
 ;; In the first pass the tree of (potentially) nested,
 ;; context-modifying operators is navigated and all bindings are
@@ -314,11 +333,11 @@
 (defrecord Antijoin [bindings]
   IBinding
   (bound-symbols [this]
-    (let [shared      (apply shared-symbols (.-bindings this))
+    (let [shared      (apply shared-symbols bindings)
           join-syms   (into [] shared)]
-      (concat join-syms (remove shared (bound-symbols (first (.-bindings this)))))))
+      (concat join-syms (remove shared (bound-symbols (first bindings))))))
   (plan [this]
-    {:Antijoin [(plan (first (.-bindings this))) (plan (second (.-bindings this))) (bound-symbols this)]}))
+    {:Antijoin [(plan (first bindings)) (plan (second bindings)) (into [] (apply shared-symbols bindings))]}))
 
 (defrecord Union [bindings]
   IBinding
@@ -326,10 +345,12 @@
     (let [bindings (.-bindings this)]
       (bound-symbols (first bindings))))
   (plan [this]
-    (let [symbols (bound-symbols this)
-          _       (when-not (every? #(binds-all? % symbols) (.-bindings this))
-                    (throw (ex-info "Bindings must be union compatible inside of an or-clause. Insert suitable projections." {:union this})))]
-      {:Union [symbols (mapv plan (.-bindings this))]})))
+    (let [symbols (bound-symbols this)]
+      (if (every? #(binds-all? % symbols) bindings)
+        {:Union [symbols (mapv plan bindings)]}
+        (if debug?
+          {:Union [symbols [:_]]}
+          (throw (ex-info "Bindings must be union compatible inside of an or-clause. Insert suitable projections." {:union this})))))))
 
 (defn- union
   "Unifies two conflicting relations by taking their union."
@@ -357,8 +378,8 @@
   (fn [b1 b2] [(type b1) (type b2)]))
 
 (defmethod conflicting? :default [b1 b2] (some? (seq (shared-symbols b1 b2))))
-(defmethod conflicting? [Projection ::binding] [b1 b2] (binds-all? b2 (bound-symbols b1)))
-(defmethod conflicting? [::binding Projection] [b1 b2] (conflicting? b2 b1))
+;; (defmethod conflicting? [Projection ::binding] [b1 b2] (binds-all? b2 (bound-symbols b1)))
+;; (defmethod conflicting? [::binding Projection] [b1 b2] (conflicting? b2 b1))
 
 (defmethod conflicting? [::binding Aggregation] [b1 b2]
   (conflicting? b2 b1))
@@ -443,12 +464,10 @@
 
 (defn- unify-with
   [op unified binding]
-  (trace "introducing" binding)
-  (let [[conflicts free] (separate #(conflicting? binding %) unified)
-        _                (when-not (empty? conflicts) (trace "conflicts" conflicts))]
+  (trace-bindings (name op) [binding])
+  (let [[conflicts free] (separate #(conflicting? binding %) unified)]
     (if (empty? conflicts)
-      (do (trace "unified" (conj unified binding))
-          (conj unified binding))
+      (conj unified binding)
       (let [resolved (reduce
                       (fn [binding other] (unify binding other op)) binding conflicts)]
         (unify-with op free resolved)))))
@@ -457,7 +476,8 @@
   ([op bindings] (unify-bindings op #{} bindings))
   ([op unified bindings]
    (if (empty? bindings)
-     unified
+     (do (trace-bindings "UNIFIED" unified)
+         unified)
      (reduce (partial unify-with op) unified bindings))))
 
 (defn unify-context [^Context ctx]
@@ -492,6 +512,7 @@
 (comment
   (compile-query '[:find ?e ?n :where [?e :name ?n]])
   (compile-query '[:find ?n ?e :where [?e :name ?n]])
+  (compile-query '[:find ?e :where [?e :name "Test"]])
 
   (compile-query '[:find ?e ?n ?a :where [?e :age ?a] [?e :name ?n]])
 
@@ -546,9 +567,9 @@
         rel->rule (fn [rules head ctx]
                     (let [rule-name (str (:name head))
                           plan      (->> ctx extract-binding plan)]
-                      (conj rules (->Rule rule-name plan))))
+                      (conj rules {:name rule-name :plan plan})))
         rules     (reduce-kv rel->rule #{} compiled)]
-    rules))
+    (into [] rules)))
 
 (comment
   (compile-rules '[[(admin? ?user) [?user :admin? true]]])

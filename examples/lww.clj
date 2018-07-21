@@ -48,17 +48,17 @@
   
   (def conn (create-conn "ws://127.0.0.1:6262"))
 
-  (exec! conn
-    ;; (register-query db "older" '[:find ?t1 ?key :where (older? ?t1 ?key)] rules)
-    (register-query db "lww" q rules))
+  (exec! conn (register-query db "lww_crdt" q rules))
 
   (exec! conn
-    (transact db [{:db/id 1 :assign/time 4 :assign/key 100 :assign/value "X"}
-                  {:db/id 2 :assign/time 2 :assign/key 100 :assign/value "Y"}]))
+    (transact db [{:db/id 1 :assign/time 4 :assign/key 100 :assign/value "X"}])
 
-  (exec! conn
+    (transact db [{:db/id 2 :assign/time 2 :assign/key 100 :assign/value "Y"}])
+
     (transact db [{:db/id 4 :assign/time 10 :assign/key 100 :assign/value "Z"}
-                  {:db/id 5 :assign/time 10 :assign/key 200 :assign/value "Z"}]))
+                  {:db/id 5 :assign/time 10 :assign/key 200 :assign/value "Z"}])
 
-  (exec! conn
-    (transact db [{:db/id 3 :assign/time 6 :assign/key 200 :assign/value "Y"}])))
+    (transact db [{:db/id 3 :assign/time 6 :assign/key 200 :assign/value "Y"}])
+
+    (transact db [{:db/id 3 :assign/time 1 :assign/key 200 :assign/value "Y"}]))
+  )

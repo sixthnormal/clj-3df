@@ -5,18 +5,22 @@
 
 (def encode-symbol (memoize (fn [sym] (clojure.lang.RT/nextID))))
 
-(defn- encode-plan [attr->int plan]
+(defn encode-plan [attr->int plan]
   (cond
-    (map? plan)     (let [[tag args] (first plan)]
-                      {tag (mapv (partial encode-plan attr->int) args)})
-    (symbol? plan)  (encode-symbol plan)
-    (keyword? plan) (attr->int plan)
-    (vector? plan)  (mapv (partial encode-plan attr->int) plan)
-    (string? plan)  {:String plan}
-    (number? plan)  {:Number plan}
-    (boolean? plan) {:Bool plan}))
+    (symbol? plan)      (encode-symbol plan)
+    (keyword? plan)     (attr->int plan)
+    (sequential? plan)  (mapv (partial encode-plan attr->int) plan)
+    (associative? plan) (reduce-kv (fn [m k v] (assoc m k (encode-plan attr->int v))) {} plan)
+    (nil? plan)         (throw (ex-info "Plan contain's nils."))
+    :else               plan))
+
+(defn encode-rules [attr->int rules]
+  (mapv (fn [rule]
+          (let [{:keys [name plan]} rule]
+            {:name name :plan (encode-plan attr->int plan)})) rules))
 
 (comment
+  (encode-plan {} [])
   (encode-plan {} '?name)
   (encode-plan {:name 100} '{:HasAttr [?e :name ?n]})
   (encode-plan {:name 200} '{:Join [{:HasAttr [?e1 :name ?n]} {:HasAttr [?e2 :name ?n]} ?n]})

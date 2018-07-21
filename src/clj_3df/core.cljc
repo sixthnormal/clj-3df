@@ -8,7 +8,8 @@
    [aleph.http :as http]
    [manifold.stream :as stream]
    [cheshire.core]
-   [clj-3df.parser :as parser]))
+   [clj-3df.parser :as parser]
+   [clj-3df.encode :as encode]))
 
 (defprotocol IDB
   (-schema [db])
@@ -20,8 +21,11 @@
   IDB
   (-schema [db] (.-schema db))
   (-attrs-by [db property] ((.-rschema db) property))
-  (-attr->int [db attr] ((.-attr->int db) attr))
-  (-int->attr [db i] ((.-int->attr db) i)))
+  (-attr->int [db attr]
+    (if-let [[k v] (find attr->int attr)]
+      v
+      (throw (ex-info "Unknown attribute." {:attr attr}))))
+  (-int->attr [db i] (int->attr i)))
 
 (defn attr->properties [k v]
   (case v
@@ -61,14 +65,12 @@
 (defn register-query
   ([db name query] (register-query db name query []))
   ([db name query rules]
-   (let [compiled   (parser/compile-query db query)
-         rules-plan (if (empty? rules)
+   (let [rules-plan (if (empty? rules)
                       []
-                      (parser/compile-rules db rules))]
+                      (parser/compile-rules rules))]
      {:Register {:query_name name
-                 :plan       (.-plan compiled)
-                 :in         (.-in compiled)
-                 :rules      rules-plan}})))
+                 :plan       (encode/encode-plan (partial -attr->int db) (parser/compile-query query))
+                 :rules      (encode/encode-rules (partial -attr->int db) rules-plan)}})))
 
 (defn- ^Boolean is-attr? [db attr property] (contains? (-attrs-by db property) attr))
 (defn- ^Boolean multival? [db attr] (is-attr? db attr :db.cardinality/many))
@@ -164,14 +166,22 @@
                                     [?e :name "Dipper"])]))
 
   (exec! conn
+    (register-query db "not-test" '[:find ?e
+                                    :where
+                                    [?e :name "Mabel"]
+                                    (not [?e :age 25])]))
+
+  (exec! conn
     (transact db [{:db/id  10
                    :name   "Dipper"
                    :age    12
                    :admin? true}
                   [:db/add 2 :friend 1]]))
   
-  (exec! conn (transact db [[:db/add 1 :name "Dipper"]]))
-  (exec! conn (transact db [[:db/add 2 :name "Mabel"]]))
+  (exec! conn (transact db [[:db/add 1 :name "Dipper"] [:db/add 1 :age 26]]))
+  (exec! conn (transact db [[:db/add 2 :name "Mabel"] [:db/add 2 :age 26]]))
+  (exec! conn (transact db [{:db/id 3 :name "Mabel" :age 25}]))
+  (exec! conn (transact db [[:db/retract 2 :name "Mabel"]]))
   (exec! conn (transact db [[:db/retract 2 :name "Mabel"]]))
   (exec! conn (transact db [[:db/retract 1 :name "Dipper"]
                             [:db/add 1 :name "Mabel"]])))

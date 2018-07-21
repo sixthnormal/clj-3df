@@ -179,17 +179,18 @@
 
 (deftest test-simple-rule
   (let [rules '[[(admin? ?user) [?user :admin? true]]]]
-    (is (= #{(parser/->Rule "admin?" '{:Filter [?user :admin? true]})}
+    (is (= #{{:name "admin?" :plan '{:Filter [?user :admin? true]}}}
            (compile-rules rules)))))
 
 (deftest test-recursive-rule
   (let [rules '[[(propagate ?x ?y) [?x :node ?y]]
                 [(propagate ?x ?y) [?z :edge ?y] (propagate ?x ?z)]]]
-    (is (= #{(parser/->Rule "propagate" '{:Union
-                                          [[?x ?y]
-                                           [{:HasAttr [?x :node ?y]}
-                                            {:Join [{:HasAttr [?z :edge ?y]}
-                                                    {:RuleExpr ["propagate" [?x ?z]]} ?z]}]]})}
+    (is (= #{{:name "propagate"
+              :plan '{:Union
+                      [[?x ?y]
+                       [{:HasAttr [?x :node ?y]}
+                        {:Join [{:HasAttr [?z :edge ?y]}
+                                {:RuleExpr ["propagate" [?x ?z]]} ?z]}]]}}}
            (compile-rules rules)))))
 
 (deftest test-many-rule-bodies
@@ -260,17 +261,17 @@
                                [?t1 ?key]]})
              (parser/->Rule "lww"
                             '{:Project
-                             [{:Antijoin
-                               [{:Join
-                                 [{:Join
-                                   [{:HasAttr [?op :assign/value ?val]}
-                                    {:HasAttr [?op :assign/time ?t]}
-                                    ?op]}
-                                  {:HasAttr [?op :assign/key ?key]}
-                                  ?op]}
-                                {:RuleExpr ["older?" [?t ?key]]}
-                                (?t ?key ?op ?val)]}
-                              [?key ?val]]})}
+                              [{:Antijoin
+                                [{:Join
+                                  [{:Join
+                                    [{:HasAttr [?op :assign/value ?val]}
+                                     {:HasAttr [?op :assign/time ?t]}
+                                     ?op]}
+                                   {:HasAttr [?op :assign/key ?key]}
+                                   ?op]}
+                                 {:RuleExpr ["older?" [?t ?key]]}
+                                 (?t ?key ?op ?val)]}
+                               [?key ?val]]})}
            (compile-rules rules)))))
 
 (deftest test-min
