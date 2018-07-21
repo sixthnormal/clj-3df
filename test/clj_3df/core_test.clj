@@ -92,6 +92,7 @@
     (testing "plain or not allowed if symbols don't match everywhere"
       (is (thrown? Exception (compile-query '[:find ?x ?y
                                               :where (or [?x :edge ?y]
+                                                         [?x :edge 14]
                                                          (and [?x :edge ?z] [?z :edge ?y]))]))))
     
     (is (= '{:Union [[?x ?y]

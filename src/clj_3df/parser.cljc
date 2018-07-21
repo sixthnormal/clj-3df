@@ -349,7 +349,7 @@
       (if (every? #(binds-all? % symbols) bindings)
         {:Union [symbols (mapv plan bindings)]}
         (if debug?
-          {:Union [symbols [:_]]}
+          {:Union [symbols (mapv plan bindings)]}
           (throw (ex-info "Bindings must be union compatible inside of an or-clause. Insert suitable projections." {:union this})))))))
 
 (defn- union
@@ -378,8 +378,8 @@
   (fn [b1 b2] [(type b1) (type b2)]))
 
 (defmethod conflicting? :default [b1 b2] (some? (seq (shared-symbols b1 b2))))
-;; (defmethod conflicting? [Projection ::binding] [b1 b2] (binds-all? b2 (bound-symbols b1)))
-;; (defmethod conflicting? [::binding Projection] [b1 b2] (conflicting? b2 b1))
+(defmethod conflicting? [Projection ::binding] [b1 b2] (binds-all? b2 (bound-symbols b1)))
+(defmethod conflicting? [::binding Projection] [b1 b2] (conflicting? b2 b1))
 
 (defmethod conflicting? [::binding Aggregation] [b1 b2]
   (conflicting? b2 b1))
@@ -435,6 +435,13 @@
 (defmethod unify [::binding Projection] [b1 b2 op] (unify b2 b1 op))
 (defmethod unify [Projection ::binding] [projection binding op]
   (update projection :binding unify binding op))
+(defmethod unify [Projection Projection] [proj1 proj2 op]
+  (let [syms1 (set (bound-symbols proj1))
+        syms2 (set (bound-symbols proj2))]
+    (cond
+      (= syms1 syms2) (update proj1 :binding unify (:binding proj2) op)
+      (= op ::or)     (union proj1 proj2)
+      :else           (throw (ex-info "Clashing projections." {:proj1 proj1 :proj2 proj2})))))
 
 (defmethod unify [::binding Aggregation] [b1 b2 op] (unify b2 b1 op))
 (defmethod unify [Aggregation ::binding] [aggregation binding op]
