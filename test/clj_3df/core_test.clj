@@ -1,7 +1,7 @@
 (ns clj-3df.core-test
   (:require
    [clojure.test :refer [deftest is testing run-tests]]
-   [clj-3df.parser :as parser :refer [compile-query compile-rules]]))
+   [clj-3df.parser :refer [compile-query compile-rules]]))
 
 ;; TESTS
 
@@ -22,7 +22,7 @@
 
 (deftest test-filter
   (let [query '[:find ?e :where [?e :name "Dipper"]]]
-    (is (= '{:Filter [?e :name "Dipper"]}
+    (is (= '{:Filter [?e :name {:String "Dipper"}]}
            (compile-query query)))))
 
 (deftest test-find-clause
@@ -57,7 +57,7 @@
   (let [query '[:find ?e
                 :where (or [?e :name "Dipper"]
                            [?e :age 12])]]
-    (is (= '{:Union [[?e] [{:Filter [?e :name "Dipper"]} {:Filter [?e :age 12]}]]}
+    (is (= '{:Union [[?e] [{:Filter [?e :name {:String "Dipper"}]} {:Filter [?e :age {:Number 12}]}]]}
            (compile-query query)))))
 
 (deftest test-multi-arity-join
@@ -66,9 +66,9 @@
                            [?e :age 12]
                            [?e :admin? false])]]
     (is (= '{:Union [[?e]
-                     [{:Filter [?e :name "Dipper"]}
-                      {:Filter [?e :age 12]}
-                      {:Filter [?e :admin? false]}]]}
+                     [{:Filter [?e :name {:String "Dipper"}]}
+                      {:Filter [?e :age {:Number 12}]}
+                      {:Filter [?e :admin? {:Bool false}]}]]}
            (compile-query query)))))
 
 (deftest test-nested-or-and-filter
@@ -78,8 +78,8 @@
                                 [?e :age 12]))]]
     (is (= '{:Union
              [[?e]
-              [{:Filter [?e :name "Dipper"]}
-               {:Join [{:Filter [?e :age 12]} {:Filter [?e :name "Mabel"]} ?e]}]]}
+              [{:Filter [?e :name {:String "Dipper"}]}
+               {:Join [{:Filter [?e :age {:Number 12}]} {:Filter [?e :name {:String "Mabel"}]} ?e]}]]}
            (compile-query query)))))
 
 (deftest test-or-join
@@ -103,7 +103,7 @@
   (let [query '[:find ?e
                 :where [?e :age 12] (not [?e :name "Mabel"])]]
     (is (= '{:Antijoin
-             [{:Filter [?e :age 12]} {:Filter [?e :name "Mabel"]} [?e]]}
+             [{:Filter [?e :age {:Number 12}]} {:Filter [?e :name {:String "Mabel"}]} [?e]]}
            (compile-query query)))))
 
 (deftest test-fully-unbounded-not
@@ -138,8 +138,8 @@
                 :where (and [?e :name "Mabel"]
                             (not [?e :name "Mabel"]))]]
     (is (= '{:Antijoin
-             [{:Filter [?e :name "Mabel"]}
-              {:Filter [?e :name "Mabel"]}
+             [{:Filter [?e :name {:String "Mabel"}]}
+              {:Filter [?e :name {:String "Mabel"}]}
               [?e]]}
            (compile-query query)))))
 
@@ -173,14 +173,14 @@
                            (and [?e :name "Dipper"]
                                 [?e :age 12]))]]
     (is (= '{:Union [[?e]
-                     [{:Filter [?e :name "Mabel"]}
-                      {:Join [{:Filter [?e :name "Dipper"]} {:Filter [?e :age 12]} ?e]}]]}
+                     [{:Filter [?e :name {:String "Mabel"}]}
+                      {:Join [{:Filter [?e :name {:String "Dipper"}]} {:Filter [?e :age {:Number 12}]} ?e]}]]}
            (compile-query query)))))
 
 (deftest test-simple-rule
   (let [rules '[[(admin? ?user) [?user :admin? true]]]]
-    (is (= #{{:name "admin?" :plan '{:Filter [?user :admin? true]}}}
-           (compile-rules rules)))))
+    (is (= #{{:name "admin?" :plan '{:Filter [?user :admin? {:Bool true}]}}}
+           (set (compile-rules rules))))))
 
 (deftest test-recursive-rule
   (let [rules '[[(propagate ?x ?y) [?x :node ?y]]
@@ -191,7 +191,7 @@
                        [{:HasAttr [?x :node ?y]}
                         {:Join [{:HasAttr [?z :edge ?y]}
                                 {:RuleExpr ["propagate" [?x ?z]]} ?z]}]]}}}
-           (compile-rules rules)))))
+           (set (compile-rules rules))))))
 
 (deftest test-many-rule-bodies
   (let [rules '[;; @TODO check whether datomic allows this
@@ -200,14 +200,15 @@
                 [(subtype ?t1 ?t2) [?t1 :name ?n] [?t2 :name ?n]]
                 [(subtype ?t1 ?t2) [?t1 :extends ?t2]]
                 [(subtype ?t1 ?t2) [?t1 :extends ?any] (subtype ?any ?t2)]]]
-    (is (= #{(parser/->Rule "subtype" {:Union
-                                       [[1 0]
-                                        [{:Filter [0 100 {:String "Object"}]}
-                                         {:Join [{:HasAttr [1 100 2]} {:HasAttr [0 100 2]} 2]}
-                                         {:HasAttr [1 700 0]}
-                                         {:Join
-                                          [{:HasAttr [1 700 3]} {:RuleExpr ["subtype" [3 0]]} 3]}]]})}
-           (compile-rules rules)))))
+    (is (= #{{:name "subtype"
+              :plan {:Union
+                     [[1 0]
+                      [{:Filter [0 100 {:String "Object"}]}
+                       {:Join [{:HasAttr [1 100 2]} {:HasAttr [0 100 2]} 2]}
+                       {:HasAttr [1 700 0]}
+                       {:Join
+                        [{:HasAttr [1 700 3]} {:RuleExpr ["subtype" [3 0]]} 3]}]]}}}
+           (set (compile-rules rules))))))
 
 (deftest test-predicates
   (let [query '[:find ?a1 ?a2
@@ -243,36 +244,36 @@
                  [?op :assign/key ?key]
                  [?op :assign/value ?val]
                  (not (older? ?t ?key))]]]
-    (is (= #{(parser/->Rule "older?"
-                            '{:Project
-                              [{:PredExpr
-                                ["LT"
-                                 [?t1 ?t2]
-                                 {:Join
-                                  [{:HasAttr [?op :assign/time ?t1]}
-                                   {:Join
-                                    [{:Join
-                                      [{:HasAttr [?op2 :assign/time ?t2]}
-                                       {:HasAttr [?op2 :assign/key ?key]}
-                                       ?op2]}
-                                     {:HasAttr [?op :assign/key ?key]}
-                                     ?key]}
-                                   ?op]}]}
-                               [?t1 ?key]]})
-             (parser/->Rule "lww"
-                            '{:Project
-                              [{:Antijoin
-                                [{:Join
-                                  [{:Join
-                                    [{:HasAttr [?op :assign/value ?val]}
-                                     {:HasAttr [?op :assign/time ?t]}
-                                     ?op]}
-                                   {:HasAttr [?op :assign/key ?key]}
-                                   ?op]}
-                                 {:RuleExpr ["older?" [?t ?key]]}
-                                 (?t ?key ?op ?val)]}
-                               [?key ?val]]})}
-           (compile-rules rules)))))
+    (is (= #{{:name "older?"
+              :plan '{:Project
+                      [{:PredExpr
+                        ["LT"
+                         [?t1 ?t2]
+                         {:Join
+                          [{:HasAttr [?op :assign/time ?t1]}
+                           {:Join
+                            [{:Join
+                              [{:HasAttr [?op2 :assign/time ?t2]}
+                               {:HasAttr [?op2 :assign/key ?key]}
+                               ?op2]}
+                             {:HasAttr [?op :assign/key ?key]}
+                             ?key]}
+                           ?op]}]}
+                       [?t1 ?key]]}}
+             {:name "lww"
+              :plan '{:Project
+                      [{:Antijoin
+                        [{:Join
+                          [{:Join
+                            [{:HasAttr [?op :assign/value ?val]}
+                             {:HasAttr [?op :assign/time ?t]}
+                             ?op]}
+                           {:HasAttr [?op :assign/key ?key]}
+                           ?op]}
+                         {:RuleExpr ["older?" [?t ?key]]}
+                         [?t ?key]]}
+                       [?key ?val]]}}}
+           (set (compile-rules rules))))))
 
 (deftest test-min
   (let [query '[:find ?user (min ?age)
