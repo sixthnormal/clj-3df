@@ -1,7 +1,9 @@
 (ns clj-3df.examples.lww
   (:require
    [clj-3df.core :refer [create-conn create-db exec!
-                         register-plan register-query transact]]))
+                         register-plan register-query transact]]
+   [manifold.stream :as stream]
+   [manifold.bus :as bus]))
 
 ;; LWW Register
 ;; https://speakerdeck.com/ept/data-structures-as-queries-expressing-crdts-using-datalog?slide=15
@@ -46,17 +48,25 @@
 (comment
   
   (def conn (create-conn "ws://127.0.0.1:6262"))
+  (stream/consume #(println %) (bus/subscribe (:out conn) :out))
 
   (exec! conn (register-query db "lww_crdt" q rules))
 
   (exec! conn
     (transact db [{:db/id 1 :assign/time 4 :assign/key 100 :assign/value "X"}])
+    (expect-> out (assert (= [[[{"Number" 4} {"Number" 100} {"String" "X"}] 1]] out))))
 
-    (transact db [{:db/id 2 :assign/time 2 :assign/key 100 :assign/value "Y"}])
+  (exec! conn
+    (transact db [{:db/id 2 :assign/time 2 :assign/key 100 :assign/value "Y"}]))
 
+  (exec! conn
     (transact db [{:db/id 4 :assign/time 10 :assign/key 100 :assign/value "Z"}
                   {:db/id 5 :assign/time 10 :assign/key 200 :assign/value "Z"}])
+    (expect-> out (assert (= [[[{"Number" 4} {"Number" 100} {"String" "X"}] -1]
+                              [[{"Number" 10} {"Number" 100} {"String" "Z"}] 1]
+                              [[{"Number" 10} {"Number" 200} {"String" "Z"}] 1]] out))))
 
+  (exec! conn
     (transact db [{:db/id 3 :assign/time 6 :assign/key 200 :assign/value "Y"}])
 
     (transact db [{:db/id 3 :assign/time 1 :assign/key 200 :assign/value "Y"}]))
