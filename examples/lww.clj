@@ -1,8 +1,7 @@
 (ns clj-3df.examples.lww
   (:require
    [clj-3df.core :refer [create-conn create-db exec!
-                         register-plan register-query transact]]
-   [clj-3df.parser :refer [compile-rules]]))
+                         register-plan register-query transact]]))
 
 ;; LWW Register
 ;; https://speakerdeck.com/ept/data-structures-as-queries-expressing-crdts-using-datalog?slide=15

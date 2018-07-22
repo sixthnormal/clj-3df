@@ -8,7 +8,7 @@
    [aleph.http :as http]
    [manifold.stream :as stream]
    [cheshire.core]
-   [clj-3df.parser :as parser]
+   [clj-3df.compiler :as compiler]
    [clj-3df.encode :as encode]))
 
 (defprotocol IDB
@@ -67,9 +67,9 @@
   ([db name query rules]
    (let [rules-plan (if (empty? rules)
                       []
-                      (parser/compile-rules rules))]
+                      (compiler/compile-rules rules))]
      {:Register {:query_name name
-                 :plan       (encode/encode-plan (partial -attr->int db) (parser/compile-query query))
+                 :plan       (encode/encode-plan (partial -attr->int db) (compiler/compile-query query))
                  :rules      (encode/encode-rules (partial -attr->int db) rules-plan)}})))
 
 (defn- ^Boolean is-attr? [db attr property] (contains? (-attrs-by db property) attr))

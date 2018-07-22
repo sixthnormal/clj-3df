@@ -1,4 +1,4 @@
-(ns clj-3df.parser
+(ns clj-3df.compiler
   (:require
    [clojure.string :as str]
    [clojure.set :as set]
@@ -426,10 +426,10 @@
     (nil? b2) b1
     :else
     (case [op (:negated? b1 false) (:negated? b2 false)]
-      [::and false false] (->Join [b2 b1])
+      [::and false false] (->Join [b1 b2])
       [::and false true]  (->Antijoin [b1 b2])
       [::and true false]  (->Antijoin [b2 b1])
-      [::or false false]  (union b2 b1)
+      [::or false false]  (union b1 b2)
       [::or false true]   (throw (ex-info "Unbound not" {:b1 b1 :b2 b2}))
       [::or true false]   (throw (ex-info "Unbound not" {:b1 b1 :b2 b2})))))
 

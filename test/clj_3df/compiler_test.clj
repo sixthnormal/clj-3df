@@ -1,9 +1,7 @@
-(ns clj-3df.core-test
+(ns clj-3df.compiler-test
   (:require
    [clojure.test :refer [deftest is testing run-tests]]
-   [clj-3df.parser :refer [compile-query compile-rules]]))
-
-;; TESTS
+   [clj-3df.compiler :refer [compile-query compile-rules]]))
 
 (deftest test-lookup
   (let [query '[:find ?n :where [876 :name ?n]]]
