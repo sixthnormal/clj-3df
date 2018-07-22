@@ -33,13 +33,13 @@
       (is (thrown? Exception (compile-query '[:find ?unbound :where [?bound :name "Dipper"]]))))
     
     (is (= '{:Project
-             [{:Join [{:HasAttr [?e1 :name ?n]} {:HasAttr [?e2 :name ?n]} ?n]} [?e1 ?n ?e2]]}
+             [{:Join [{:HasAttr [?e1 :name ?n]} {:HasAttr [?e2 :name ?n]} [?n]]} [?e1 ?n ?e2]]}
            (compile-query query)))))
 
 (deftest test-simple-join
   (let [query '[:find ?e ?n ?a
                 :where [?e :name ?n] [?e :age ?a]]]
-    (is (= '{:Join [{:HasAttr [?e :name ?n]} {:HasAttr [?e :age ?a]} ?e]}
+    (is (= '{:Join [{:HasAttr [?e :name ?n]} {:HasAttr [?e :age ?a]} [?e]]}
            (compile-query query)))))
 
 (deftest test-nested-join
@@ -48,8 +48,8 @@
     (is (= '{:Project
              [{:Join
                [{:HasAttr [?e2 :name ?n2]}
-                {:Join [{:HasAttr [?e1 :name ?n1]} {:HasAttr [?e1 :friend ?e2]} ?e1]}
-                ?e2]}
+                {:Join [{:HasAttr [?e1 :name ?n1]} {:HasAttr [?e1 :friend ?e2]} [?e1]]}
+                [?e2]]}
               [?e1 ?n1 ?e2 ?n2]]}
            (compile-query query)))))
 
@@ -79,7 +79,7 @@
     (is (= '{:Union
              [[?e]
               [{:Filter [?e :name {:String "Dipper"}]}
-               {:Join [{:Filter [?e :age {:Number 12}]} {:Filter [?e :name {:String "Mabel"}]} ?e]}]]}
+               {:Join [{:Filter [?e :age {:Number 12}]} {:Filter [?e :name {:String "Mabel"}]} [?e]]}]]}
            (compile-query query)))))
 
 (deftest test-or-join
@@ -97,7 +97,7 @@
     
     (is (= '{:Union [[?x ?y]
                      [{:HasAttr [?x :edge ?y]}
-                      {:Join [{:HasAttr [?z :edge ?y]} {:HasAttr [?x :edge ?z]} ?z]}]]}
+                      {:Join [{:HasAttr [?z :edge ?y]} {:HasAttr [?x :edge ?z]} [?z]]}]]}
            (compile-query query)))))
 
 (deftest test-not
@@ -153,7 +153,7 @@
                        (recur ?z ?y)))]]
     (is (= '{:Union [[?x ?y]
                      [{:HasAttr [?x :edge ?y]}
-                      {:Join [{:HasAttr [?x :edge ?z]} {:RuleExpr ["recur" [?z ?y]]} ?z]}]]}
+                      {:Join [{:HasAttr [?x :edge ?z]} {:RuleExpr ["recur" [?z ?y]]} [?z]]}]]}
            (compile-query query)))))
 
 (deftest test-label-propagation
@@ -165,7 +165,7 @@
                        (recur ?x ?z)))]]
     (is (= '{:Union [[?x ?y]
                      [{:HasAttr [?x :node ?y]}
-                      {:Join [{:HasAttr [?z :edge ?y]} {:RuleExpr ["recur" [?x ?z]]} ?z]}]]}
+                      {:Join [{:HasAttr [?z :edge ?y]} {:RuleExpr ["recur" [?x ?z]]} [?z]]}]]}
            (compile-query query)))))
 
 (deftest test-nested-and-or
@@ -175,7 +175,7 @@
                                 [?e :age 12]))]]
     (is (= '{:Union [[?e]
                      [{:Filter [?e :name {:String "Mabel"}]}
-                      {:Join [{:Filter [?e :name {:String "Dipper"}]} {:Filter [?e :age {:Number 12}]} ?e]}]]}
+                      {:Join [{:Filter [?e :name {:String "Dipper"}]} {:Filter [?e :age {:Number 12}]} [?e]]}]]}
            (compile-query query)))))
 
 (deftest test-simple-rule
@@ -191,7 +191,7 @@
                       [[?x ?y]
                        [{:HasAttr [?x :node ?y]}
                         {:Join [{:HasAttr [?z :edge ?y]}
-                                {:RuleExpr ["propagate" [?x ?z]]} ?z]}]]}}}
+                                {:RuleExpr ["propagate" [?x ?z]]} [?z]]}]]}}}
            (set (compile-rules rules))))))
 
 (deftest test-many-rule-bodies
@@ -205,10 +205,10 @@
               :plan {:Union
                      [[1 0]
                       [{:Filter [0 100 {:String "Object"}]}
-                       {:Join [{:HasAttr [1 100 2]} {:HasAttr [0 100 2]} 2]}
+                       {:Join [{:HasAttr [1 100 2]} {:HasAttr [0 100 2]} [2]]}
                        {:HasAttr [1 700 0]}
                        {:Join
-                        [{:HasAttr [1 700 3]} {:RuleExpr ["subtype" [3 0]]} 3]}]]}}}
+                        [{:HasAttr [1 700 3]} {:RuleExpr ["subtype" [3 0]]} [3]]}]]}}}
            (set (compile-rules rules))))))
 
 (deftest test-predicates
@@ -221,7 +221,7 @@
              [{:PredExpr
                ["LT"
                 [?a1 ?a2]
-                {:Join [{:HasAttr [?user :age ?a2]} {:HasAttr [?user :age ?a1]} ?user]}]}
+                {:Join [{:HasAttr [?user :age ?a2]} {:HasAttr [?user :age ?a1]} [?user]]}]}
               [?a1 ?a2]]}
            (compile-query query)))))
 
@@ -256,10 +256,10 @@
                             [{:Join
                               [{:HasAttr [?op2 :assign/time ?t2]}
                                {:HasAttr [?op2 :assign/key ?key]}
-                               ?op2]}
+                               [?op2]]}
                              {:HasAttr [?op :assign/key ?key]}
-                             ?key]}
-                           ?op]}]}
+                             [?key]]}
+                           [?op]]}]}
                        [?t1 ?key]]}}
              {:name "lww"
               :plan '{:Project
@@ -268,9 +268,9 @@
                           [{:Join
                             [{:HasAttr [?op :assign/value ?val]}
                              {:HasAttr [?op :assign/time ?t]}
-                             ?op]}
+                             [?op]]}
                            {:HasAttr [?op :assign/key ?key]}
-                           ?op]}
+                           [?op]]}
                          {:RuleExpr ["older?" [?t ?key]]}
                          [?t ?key]]}
                        [?key ?val]]}}}
@@ -281,3 +281,13 @@
                 :where [?user :age ?age]]]
     (is (= '{:Aggregate ["MIN" {:HasAttr [?user :age ?age]} [?age]]}
            (compile-query query)))))
+
+;; @TODO tricky predicates
+'[(later-child ?parent ?child2)
+  [?i1 :insert/parent ?parent] [?i1 :insert/id ?child1]
+  [?i2 :insert/parent ?parent] [?i2 :insert/id ?child2]
+  [?child1 :id/ctr ?ctr1] [?child1 :id/node ?n1]
+  [?child2 :id/ctr ?ctr2] [?child2 :id/node ?n2]
+  (or [(> ?ctr1 ?ctr2)]
+      (and [(= ?ctr1 ?ctr2)]
+           [(> ?n1 ?n2)]))]

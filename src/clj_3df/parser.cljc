@@ -7,7 +7,7 @@
 
 ;; UTIL
 
-(def debug? false)
+(def ^:dynamic debug? false)
 (def log-level :info)
 
 (defmacro info [& args]
@@ -111,6 +111,9 @@
   (conflict? [binding other] "Returns true iff the 'other' binding conflicts with this binding.")
   (plan [binding] "Returns a query plan to compute this binding."))
 
+(defn- debug-plan [b]
+  (binding [debug? true] (plan b)))
+
 (defn- binds?
   "Returns true iff the binding binds the specified symbol."
   [binding symbol]
@@ -193,7 +196,7 @@
           debug?                              {:Project [(plan binding) symbols]})
         (if debug?
           {:Project [:_ symbols]}
-          (throw (ex-info "Projection on unbound symbols." {:binding this})))))))
+          (throw (ex-info "Projection on unbound symbols." {:binding (debug-plan this)})))))))
 
 ;; In the first pass the tree of (potentially) nested,
 ;; context-modifying operators is navigated and all bindings are
@@ -317,17 +320,16 @@
 ;; is bound in two different contexts, the enclosing one determines
 ;; the method of unification.
 
-;; @TODO join on more than one variable
 ;; @TODO join more than two bindings
 (defrecord Join [bindings]
   IBinding
   (bound-symbols [this]
-    (let [shared   (apply shared-symbols bindings)
-          join-sym (first shared)]
-      (reduce concat [join-sym] (map #(remove shared (bound-symbols %)) (.-bindings this)))))
+    (let [shared    (apply shared-symbols bindings)
+          join-syms (into [] shared)]
+      (reduce concat join-syms (map #(remove shared (bound-symbols %)) bindings))))
   (plan [this]
     (let [symbols (bound-symbols this)]
-      {:Join [(plan (first (.-bindings this))) (plan (second (.-bindings this))) (first symbols)]})))
+      {:Join [(plan (first (.-bindings this))) (plan (second (.-bindings this))) (into [] (apply shared-symbols bindings))]})))
 
 ;; @TODO antijoin more than two bindings
 (defrecord Antijoin [bindings]
@@ -341,16 +343,15 @@
 
 (defrecord Union [bindings]
   IBinding
-  (bound-symbols [this]
-    (let [bindings (.-bindings this)]
-      (bound-symbols (first bindings))))
+  (bound-symbols [this] (into [] (apply shared-symbols bindings)))
   (plan [this]
     (let [symbols (bound-symbols this)]
       (if (every? #(binds-all? % symbols) bindings)
         {:Union [symbols (mapv plan bindings)]}
         (if debug?
           {:Union [symbols (mapv plan bindings)]}
-          (throw (ex-info "Bindings must be union compatible inside of an or-clause. Insert suitable projections." {:union this})))))))
+          (throw (ex-info "Bindings must be union compatible inside of an or-clause. Insert suitable projections."
+                          {:unified (debug-plan this)})))))))
 
 (defn- union
   "Unifies two conflicting relations by taking their union."
@@ -471,12 +472,11 @@
 
 (defn- unify-with
   [op unified binding]
-  (trace-bindings (name op) [binding])
   (let [[conflicts free] (separate #(conflicting? binding %) unified)]
     (if (empty? conflicts)
       (conj unified binding)
-      (let [resolved (reduce
-                      (fn [binding other] (unify binding other op)) binding conflicts)]
+      (let [resolved (reduce (fn [binding other]
+                               (unify binding other op)) binding conflicts)]
         (unify-with op free resolved)))))
 
 (defn unify-bindings
@@ -485,7 +485,9 @@
    (if (empty? bindings)
      (do (trace-bindings "UNIFIED" unified)
          unified)
-     (reduce (partial unify-with op) unified bindings))))
+     (reduce (fn [unified binding]
+               (trace-bindings (name op) [binding])
+               (unify-with op unified binding)) unified bindings))))
 
 (defn unify-context [^Context ctx]
   (if (empty? (.-children ctx))
@@ -506,9 +508,9 @@
   [^Context ctx]
   (let [unified (.-bindings ctx)]
     (cond
-      (empty? unified)            (throw (ex-info "No binding available." {:unified unified}))
-      (> (count unified) 1)       (throw (ex-info "More than one binding present." {:unified unified}))
-      (:negated? (first unified)) (throw (ex-info "Unbound not." {:unified unified}))
+      (empty? unified)            (throw (ex-info "No binding available." {:unified (debug-plan unified)}))
+      (> (count unified) 1)       (throw (ex-info "More than one binding present." {:unified (mapv debug-plan unified)}))
+      (:negated? (first unified)) (throw (ex-info "Unbound not." {:unified (debug-plan unified)}))
       :else                       (first unified))))
 
 (defn compile-query [query]

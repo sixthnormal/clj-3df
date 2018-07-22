@@ -21,21 +21,17 @@
 (def rules
   '[[(has-child? ?parent) [?wc :insert/parent ?parent]]
 
-    ;; [(later? ?id1 ?id2)
-    ;;  [?id1 :id/ctr ?ctr1] [?id1 :id/node ?n1]
-    ;;  [?id2 :id/ctr ?ctr2] [?id2 :id/node ?n2]
-    ;;  (or [(> ?ctr1 ?ctr2)]
-    ;;      (and [(= ?ctr1 ?ctr2)]
-    ;;           [(> ?n1 ?n2)]))]
-    
     [(later-child ?parent ?child2)
      [?i1 :insert/parent ?parent] [?i1 :insert/id ?child1]
      [?i2 :insert/parent ?parent] [?i2 :insert/id ?child2]
-     [?child1 :id/ctr ?ctr1] [?child1 :id/node ?n1]
-     [?child2 :id/ctr ?ctr2] [?child2 :id/node ?n2]
-     (or [(> ?ctr1 ?ctr2)]
-         (and [(= ?ctr1 ?ctr2)]
-              [(> ?n1 ?n2)]))]
+     (or
+      (and
+       [?child1 :id/ctr ?ctr1] [?child2 :id/ctr ?ctr2]
+       [(> ?ctr1 ?ctr2)])
+      (and
+       [?child1 :id/ctr ?ctr] [?child1 :id/node ?n1]
+       [?child2 :id/ctr ?ctr] [?child2 :id/node ?n2]
+       [(> ?n1 ?n2)]))]
 
     [(first-child ?parent ?child)
      [?i :insert/id ?child] [?i :insert/parent ?parent]
