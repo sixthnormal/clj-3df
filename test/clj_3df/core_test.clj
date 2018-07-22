@@ -1,4 +1,4 @@
-(ns clj-3df.integration-test
+(ns clj-3df.core-test
   (:require
    [clojure.test :refer [deftest is testing run-tests]]
    [clj-3df.core :as df :refer [exec! create-conn register-query transact]]
