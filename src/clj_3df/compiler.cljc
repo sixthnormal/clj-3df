@@ -218,25 +218,25 @@
                      (-> state
                          (update :inputs conj (->Input in [:const arg]))
                          (update :normalized-args conj in)))))
-        {:inputs #{} :normalized-args []})))
+        {:inputs [] :normalized-args []})))
 
 (defmulti normalize (fn [^Context ctx clause] (first clause)))
 
 (defmethod normalize ::and [ctx [_ {:keys [clauses]}]]
-  (let [nested (reduce normalize (->Context #{} ::and []) clauses)]
+  (let [nested (reduce normalize (->Context [] ::and []) clauses)]
     (update ctx :children conj nested)))
 
 (defmethod normalize ::or [ctx [_ {:keys [clauses]}]]
-  (let [nested (reduce normalize (->Context #{} ::or []) clauses)]
+  (let [nested (reduce normalize (->Context [] ::or []) clauses)]
     (update ctx :children conj nested)))
 
 (defmethod normalize ::or-join [ctx [_ {:keys [symbols clauses]}]]
-  (let [nested (reduce normalize (->Context #{} ::or []) clauses)]
+  (let [nested (reduce normalize (->Context [] ::or []) clauses)]
     (update ctx :children conj nested)))
 
 (defmethod normalize ::not [ctx [_ {:keys [clauses]}]]
-  (let [nested (reduce normalize (->Context #{} ::and []) clauses)
-        nested (update nested :bindings (fn [bindings] (into #{} (map #(assoc % :negated? true)) bindings)))]
+  (let [nested (reduce normalize (->Context [] ::and []) clauses)
+        nested (update nested :bindings (fn [bindings] (mapv #(assoc % :negated? true) bindings)))]
     (update ctx :children conj nested)))
 
 (defmethod normalize ::pred-expr [ctx [_ predicate-expr]]
@@ -285,12 +285,12 @@
         (update :bindings conj (->Aggregation aggregation-fn normalized-args nil)))))
 
 (defn normalize-query
-  ([ir] (normalize-query (->Context #{} ::and []) ir))
+  ([ir] (normalize-query (->Context [] ::and []) ir))
   ([ctx ir]
-   (let [where (reduce normalize (->Context #{} ::and []) (:where ir))
-         in    (->Context (into #{} (map #(->Input % nil)) (:in ir)) ::and [])
-         find  (normalize (->Context #{} ::and []) (:find ir))]
-     (->Context #{} ::and [where in find]))))
+   (let [where (reduce normalize (->Context [] ::and []) (:where ir))
+         in    (->Context (into [] (map #(->Input % nil)) (:in ir)) ::and [])
+         find  (normalize (->Context [] ::and []) (:find ir))]
+     (->Context [] ::and [where in find]))))
 
 (comment
   (-> '[:find ?e ?n :where [?e :name ?n]] (parse-query) (normalize-query))
@@ -475,12 +475,14 @@
   (let [[conflicts free] (separate #(conflicting? binding %) unified)]
     (if (empty? conflicts)
       (conj unified binding)
-      (let [resolved (reduce (fn [binding other]
-                               (unify binding other op)) binding conflicts)]
+      (let [_ (trace-bindings "CONFLICT" conflicts)
+            resolved (reduce (fn [binding other]
+                               (trace "unify" (debug-plan other) (debug-plan binding))
+                               (unify other binding op)) binding conflicts)]
         (unify-with op free resolved)))))
 
 (defn unify-bindings
-  ([op bindings] (unify-bindings op #{} bindings))
+  ([op bindings] (unify-bindings op [] bindings))
   ([op unified bindings]
    (if (empty? bindings)
      (do (trace-bindings "UNIFIED" unified)
@@ -495,7 +497,7 @@
     (let [children (map unify-context (.-children ctx))]
       (-> ctx
           (assoc :children [])
-          (update :bindings set/union (apply set/union (map :bindings children)))
+          (update :bindings into (mapcat :bindings children))
           (unify-context)))))
 
 ;; PUTTING IT ALL TOGETHER
@@ -567,9 +569,9 @@
         
         compile-rewritten (fn [compiled head where-clause]
                             (let [find-clause [::find-rel (mapv (fn [var] [:var var]) (:vars head))]
-                                  where       (reduce normalize (->Context #{} ::and []) where-clause)
-                                  find        (normalize (->Context #{} ::and []) find-clause)
-                                  ctx         (->Context #{} ::and [where find])]
+                                  where       (reduce normalize (->Context [] ::and []) where-clause)
+                                  find        (normalize (->Context [] ::and []) find-clause)
+                                  ctx         (->Context [] ::and [where find])]
                               (assoc compiled head (unify-context ctx))))
         compiled          (reduce-kv compile-rewritten {} rewritten)
 

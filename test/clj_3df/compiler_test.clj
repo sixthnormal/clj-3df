@@ -45,16 +45,17 @@
                 :where [?e1 :name ?n1] [?e1 :friend ?e2] [?e2 :name ?n2]]]
     (is (= '{:Project
              [{:Join
-               [{:HasAttr [?e2 :name ?n2]}
-                {:Join [{:HasAttr [?e1 :name ?n1]} {:HasAttr [?e1 :friend ?e2]} [?e1]]}
+               [{:Join [{:HasAttr [?e1 :name ?n1]} {:HasAttr [?e1 :friend ?e2]} [?e1]]}
+                {:HasAttr [?e2 :name ?n2]}
                 [?e2]]}
               [?e1 ?n1 ?e2 ?n2]]}
            (compile-query query)))))
 
 (deftest test-simple-or
   (let [query '[:find ?e
-                :where (or [?e :name "Dipper"]
-                           [?e :age 12])]]
+                :where
+                (or [?e :name "Dipper"]
+                    [?e :age 12])]]
     (is (= '{:Union [[?e] [{:Filter [?e :name {:String "Dipper"}]} {:Filter [?e :age {:Number 12}]}]]}
            (compile-query query)))))
 
@@ -77,7 +78,7 @@
     (is (= '{:Union
              [[?e]
               [{:Filter [?e :name {:String "Dipper"}]}
-               {:Join [{:Filter [?e :age {:Number 12}]} {:Filter [?e :name {:String "Mabel"}]} [?e]]}]]}
+               {:Join [{:Filter [?e :name {:String "Mabel"}]} {:Filter [?e :age {:Number 12}]} [?e]]}]]}
            (compile-query query)))))
 
 (deftest test-or-join
@@ -95,7 +96,7 @@
     
     (is (= '{:Union [[?x ?y]
                      [{:HasAttr [?x :edge ?y]}
-                      {:Join [{:HasAttr [?z :edge ?y]} {:HasAttr [?x :edge ?z]} [?z]]}]]}
+                      {:Join [{:HasAttr [?x :edge ?z]} {:HasAttr [?z :edge ?y]} [?z]]}]]}
            (compile-query query)))))
 
 (deftest test-not
@@ -219,18 +220,22 @@
              [{:PredExpr
                ["LT"
                 [?a1 ?a2]
-                {:Join [{:HasAttr [?user :age ?a2]} {:HasAttr [?user :age ?a1]} [?user]]}]}
+                {:Join [{:HasAttr [?user :age ?a1]} {:HasAttr [?user :age ?a2]} [?user]]}]}
               [?a1 ?a2]]}
            (compile-query query)))))
 
-(deftest test-inputs
-  (let [query '[:find ?user ?age
-                :in ?max-age
-                :where
-                [?user :age ?age]
-                [(< ?age ?max-age)]]]
-    (is (= '{:PredExpr ["LT" [?age ?max-age] {:HasAttr [?user :age ?age]}]}
-           (compile-query query)))))
+;; (deftest test-inputs
+;;   (let [query '[:find ?user ?age
+;;                 :in ?max-age
+;;                 :where
+;;                 [?user :age ?age]
+;;                 [(< ?age ?max-age)]]]
+;;     (is (= '{:PredExpr
+;;              ["LT" [?age ?max-age]
+;;               {:Join
+;;                [{:HasAttr [?user :age ?age]}
+;;                 {:Input [?max-age]}]}]}
+;;            (compile-query query)))))
 
 (deftest test-lww
   (let [rules '[[(older? ?t1 ?key)
@@ -249,25 +254,25 @@
                         ["LT"
                          [?t1 ?t2]
                          {:Join
-                          [{:HasAttr [?op :assign/time ?t1]}
-                           {:Join
+                          [{:Join
                             [{:Join
-                              [{:HasAttr [?op2 :assign/time ?t2]}
-                               {:HasAttr [?op2 :assign/key ?key]}
-                               [?op2]]}
-                             {:HasAttr [?op :assign/key ?key]}
+                              [{:HasAttr [?op :assign/key ?key]}
+                               {:HasAttr [?op :assign/time ?t1]}
+                               [?op]]}
+                             {:HasAttr [?op2 :assign/key ?key]}
                              [?key]]}
-                           [?op]]}]}
+                           {:HasAttr [?op2 :assign/time ?t2]}
+                           [?op2]]}]}
                        [?t1 ?key]]}}
              {:name "lww"
               :plan '{:Project
                       [{:Antijoin
                         [{:Join
                           [{:Join
-                            [{:HasAttr [?op :assign/value ?val]}
-                             {:HasAttr [?op :assign/time ?t]}
+                            [{:HasAttr [?op :assign/time ?t]}
+                             {:HasAttr [?op :assign/key ?key]}
                              [?op]]}
-                           {:HasAttr [?op :assign/key ?key]}
+                           {:HasAttr [?op :assign/value ?val]}
                            [?op]]}
                          {:RuleExpr ["older?" [?t ?key]]}
                          [?t ?key]]}
