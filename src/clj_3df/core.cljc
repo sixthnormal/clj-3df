@@ -8,7 +8,7 @@
    [aleph.http :as http]
    [manifold.stream :as stream]
    [manifold.bus :as bus]
-   [cheshire.core]
+   [cheshire.core :as json]
    [clj-3df.compiler :as compiler]
    [clj-3df.encode :as encode]))
 
@@ -129,17 +129,20 @@
 (defrecord Connection [ws out subscriber])
 
 (defn create-conn [url]
-  (let [ws         @(http/websocket-client url)
-        out        (bus/event-bus)
-        subscriber (Thread.
-                    (fn []
-                      (println "[SUBSCRIBER] running")
-                      (loop []
-                        (when-let [result @(stream/take! ws ::drained)]
-                          (if (= result ::drained)
-                            (println "[SUBSCRIBER] server closed connection")
-                            (do (bus/publish! out :out (cheshire.core/parse-string result))
-                                (recur)))))))]
+  (let [ws           @(http/websocket-client url)
+        out          (bus/event-bus)
+        unwrap-type  (fn [boxed] (second (first boxed)))
+        unwrap-tuple (fn [[tuple diff]] [(mapv unwrap-type tuple) diff])
+        xf-batch     (map unwrap-tuple)
+        subscriber   (Thread.
+                      (fn []
+                        (println "[SUBSCRIBER] running")
+                        (loop []
+                          (when-let [result @(stream/take! ws ::drained)]
+                            (if (= result ::drained)
+                              (println "[SUBSCRIBER] server closed connection")
+                              (do (bus/publish! out :out (->> result json/parse-string (into [] xf-batch)))
+                                  (recur)))))))]
     (.start subscriber)
     (->Connection ws out subscriber)))
 
