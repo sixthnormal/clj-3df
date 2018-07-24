@@ -129,6 +129,38 @@
   [& bindings]
   (apply set/intersection (map (comp set bound-symbols) bindings)))
 
+(defn- extract-binding
+  "Extracts the final remaining binding from a context of unified
+  bindings. Will throw if more than one binding is still present."
+  [ctx]
+  (cond
+    (empty? ctx)      (throw (ex-info "No binding available." {:ctx (debug-plan ctx)}))
+    (> (count ctx) 1) (throw (ex-info "More than one binding present." {:ctx (mapv debug-plan ctx)}))
+    :else             (first ctx)))
+
+(defrecord Disjunction [conjunctions symbols]
+  IBinding
+  (bound-symbols [this]
+    (info "symbols" symbols)
+    (if (some? (seq symbols)) symbols (bound-symbols (first (first conjunctions)))))
+  (plan [this]
+    (let [symbols      (bound-symbols this)
+          conjunctions (map extract-binding conjunctions)]
+      (if (every? #(binds-all? % symbols) conjunctions)
+        {:Union [symbols (mapv plan conjunctions)]}
+        (if debug?
+          {:Union [symbols (mapv plan conjunctions)]}
+          (throw (ex-info "Bindings must be union compatible inside of an or-clause. Insert suitable projections."
+                          {:unified (debug-plan this)})))))))
+
+(defrecord Negation [conjunction]
+  IBinding
+  (bound-symbols [this] (bound-symbols (first conjunction)))
+  (plan [this]
+    (if debug?
+      {:Negation [:_]}
+      (throw (ex-info "Unbound negation." {:negation this})))))
+
 ;; Some clauses (inputs, data patterns and rule expressions) generate
 ;; bindings by themselves, we call them relations.
 
@@ -191,7 +223,10 @@
     (let [symbols (bound-symbols this)]
       (cond
         (= symbols (bound-symbols binding)) (plan binding)
-        (binds-all? binding symbols)        {:Project [(plan binding) symbols]}
+        (binds-all? binding symbols)        (cond
+                                              ;; Union does a projection anyways.
+                                              (instance? Disjunction binding) (plan (assoc binding :symbols symbols))
+                                              :else                           {:Project [(plan binding) symbols]})
         debug?                              {:Project [(plan binding) symbols]}
         :else                               (throw (ex-info "Projection on unbound symbols." {:binding (debug-plan this)}))))))
 
@@ -200,37 +235,6 @@
 ;; brought into a form that we can work with. This mostly means
 ;; creating the right binding representation and transforming
 ;; constants into input bindings.
-
-(defn- extract-binding
-  "Extracts the final remaining binding from a context of unified
-  bindings. Will throw if more than one binding is still present."
-  [ctx]
-  (cond
-    (empty? ctx)      (throw (ex-info "No binding available." {:ctx (debug-plan ctx)}))
-    (> (count ctx) 1) (throw (ex-info "More than one binding present." {:ctx (mapv debug-plan ctx)}))
-    :else             (first ctx)))
-
-(defrecord Disjunction [conjunctions symbols]
-  IBinding
-  (bound-symbols [this]
-    (if (some? symbols) symbols (bound-symbols (first (first conjunctions)))))
-  (plan [this]
-    (let [symbols      (bound-symbols this)
-          conjunctions (map extract-binding conjunctions)]
-      (if (every? #(binds-all? % symbols) conjunctions)
-        {:Union [symbols (mapv plan conjunctions)]}
-        (if debug?
-          {:Union [symbols (mapv plan conjunctions)]}
-          (throw (ex-info "Bindings must be union compatible inside of an or-clause. Insert suitable projections."
-                          {:unified (debug-plan this)})))))))
-
-(defrecord Negation [conjunction]
-  IBinding
-  (bound-symbols [this] (bound-symbols (first conjunction)))
-  (plan [this]
-    (if debug?
-      {:Negation [:_]}
-      (throw (ex-info "Unbound negation." {:negation this})))))
 
 (defn- const->in
   "Transforms any constant arguments into inputs."
@@ -253,7 +257,7 @@
 
 (defmethod normalize ::or [ctx [_ {:keys [clauses]}]]
   (let [conjunctions (map #(normalize [] %) clauses)]
-    (conj ctx (->Disjunction conjunctions nil))))
+    (conj ctx (->Disjunction conjunctions []))))
 
 (defmethod normalize ::or-join [ctx [_ {:keys [symbols clauses]}]]
   (let [conjunctions (map #(normalize [] %) clauses)]
@@ -493,7 +497,7 @@
 
   (unify-context [] [(->Relation ::hasattr '[?e :name ?n] '[?e ?n])
                      (->Disjunction [[(->Relation ::filter '[?e :age [:number 18]] '[?e])]
-                                     [(->Relation ::filter '[?e :age [:number 22]] '[?e])]])])
+                                     [(->Relation ::filter '[?e :age [:number 22]] '[?e])]] [])])
 
   (unify-context [] [(->Relation ::hasattr '[?e :age ?age] '[?e ?age])
                      (->Predicate '> '[?age] nil)])
@@ -577,16 +581,15 @@
         rewritten    (reduce-kv rewrite-rule {} by-head)
         
         compile-rewritten (fn [compiled head where-clause]
-                            (let [find-clause [::find-rel (mapv (fn [var] [:var var]) (:vars head))]
+                            (let [unified    (->> where-clause (reduce normalize []) unify-context extract-binding)
                                   ;; @TODO projection to rule head
-                                  where       (reduce normalize [] where-clause)]
-                              (assoc compiled head (unify-context where))))
+                                  projection (->> (:vars head) (->Projection unified))]
+                              (assoc compiled head projection)))
         compiled          (reduce-kv compile-rewritten {} rewritten)
 
-        rel->rule (fn [rules head ctx]
-                    (let [rule-name (str (:name head))
-                          plan      (->> ctx extract-binding plan)]
-                      (conj rules {:name rule-name :plan plan})))
+        rel->rule (fn [rules head binding]
+                    (conj rules {:name (str (:name head))
+                                 :plan (plan binding)}))
         rules     (reduce-kv rel->rule #{} compiled)]
     (into [] rules)))
 
