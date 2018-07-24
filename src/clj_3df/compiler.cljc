@@ -184,7 +184,7 @@
         {:Aggregate [(str/upper-case (name fn-symbol)) :_ args]}
         (throw (ex-info "All aggregate arguments must be bound by a single relation." {:binding this}))))))
 
-(defrecord Projection [symbols binding]
+(defrecord Projection [binding symbols]
   IBinding
   (bound-symbols [this] symbols)
   (plan [this]
@@ -291,41 +291,36 @@
         (into inputs)
         (conj (->RuleExpr rule-name normalized-args)))))
 
-(defn normalize-query [ir]
-  (let [where (reduce normalize [] (:where ir))
-        #_in    #_(into [] (map #(->Input % nil)) (:in ir))]
-    where))
-
 (comment
-  (-> '[:find ?e ?n :where [?e :name ?n]] (parse-query) (normalize-query))
+  (->> '[:find ?e ?n :where [?e :name ?n]] parse-query :where (reduce normalize []))
 
-  (-> '[:find ?e ?n ?a
-        :where
-        [?e :name ?n] [?e :age ?a]
-        (or [(< ?a 10)]
-            [(> ?a 18)])] (parse-query) (normalize-query))
+  (->> '[:find ?e ?n ?a
+         :where
+         [?e :name ?n] [?e :age ?a]
+         (or [(< ?a 10)]
+             [(> ?a 18)])] parse-query :where (reduce normalize []))
 
-  (-> '[:find ?e ?n ?a
-        :where
-        (and [?e :name ?n] [?e :age ?a])
-        (or [(< ?a 10)]
-            [(> ?a 18)])] (parse-query) (normalize-query))
+  (->> '[:find ?e ?n ?a
+         :where
+         (and [?e :name ?n] [?e :age ?a])
+         (or [(< ?a 10)]
+             [(> ?a 18)])] parse-query :where (reduce normalize []))
 
-  (-> '[:find ?e ?n ?a
-        :where
-        [?e :name ?n] [?e :age ?a]
-        (or [(< ?a 10)]
-            (and [(> ?a 18)]
-                 [?e :admin? true]))] (parse-query) (normalize-query))
+  (->> '[:find ?e ?n ?a
+         :where
+         [?e :name ?n] [?e :age ?a]
+         (or [(< ?a 10)]
+             (and [(> ?a 18)]
+                  [?e :admin? true]))] parse-query :where (reduce normalize []))
 
-  (-> '[:find ?e :where [?e :name ?name] (not [?e :name "Dipper"])] (parse-query) (normalize-query))
+  (->> '[:find ?e :where [?e :name ?name] (not [?e :name "Dipper"])] parse-query :where (reduce normalize []))
 
-  (-> '[:find ?e ?n ?a
-        :where
-        [?e :name ?n] [?e :age ?a]
-        (not [(< ?a 10)]
-             [(> ?a 18)]
-             [?e :admin? true])] (parse-query) (normalize-query))
+  (->> '[:find ?e ?n ?a
+         :where
+         [?e :name ?n] [?e :age ?a]
+         (not [(< ?a 10)]
+              [(> ?a 18)]
+              [?e :admin? true])] parse-query :where (reduce normalize []))
   )
 
 ;; FIND SPEC
@@ -340,7 +335,7 @@
   (case typ
     ::find-rel (mapcat extract-aggregations pattern)
     :var       []
-    :aggregate [(->Aggregation (:aggregation-fn pattern) (:vars pattern) nil)]))
+    :aggregate [pattern]))
 
 (comment
   (-> '[:find ?e ?n :where [?e :name ?n]] parse-query :find extract-find-symbols)
@@ -501,11 +496,15 @@
 
 ;; PUTTING IT ALL TOGETHER
 
-;; @TODO projections + aggregations
 (defn compile-query [query]
-  (let [ir  (parse-query query)
-        ctx (normalize-query ir)]
-    (->> ctx unify-context extract-binding plan)))
+  (let [ir          (parse-query query)
+        unified     (->> (:where ir) (reduce normalize []) unify-context extract-binding)
+        projection  (->> (:find ir) extract-find-symbols (->Projection unified))
+        aggregation (->> (:find ir)
+                         extract-aggregations
+                         (reduce (fn [unified {:keys [aggregation-fn vars]}]
+                                   (->Aggregation aggregation-fn vars unified)) projection))]
+    (plan aggregation)))
 
 (comment
   (compile-query '[:find ?e ?n :where [?e :name ?n]])
