@@ -189,14 +189,11 @@
   (bound-symbols [this] symbols)
   (plan [this]
     (let [symbols (bound-symbols this)]
-      (if (some? binding)
-        (cond
-          (= symbols (bound-symbols binding)) (plan binding)
-          (binds-all? binding symbols)        {:Project [(plan binding) symbols]}
-          debug?                              {:Project [(plan binding) symbols]})
-        (if debug?
-          {:Project [:_ symbols]}
-          (throw (ex-info "Projection on unbound symbols." {:binding (debug-plan this)})))))))
+      (cond
+        (= symbols (bound-symbols binding)) (plan binding)
+        (binds-all? binding symbols)        {:Project [(plan binding) symbols]}
+        debug?                              {:Project [(plan binding) symbols]}
+        :else                               (throw (ex-info "Projection on unbound symbols." {:binding (debug-plan this)}))))))
 
 ;; In the first pass the tree of (potentially) nested,
 ;; context-modifying operators is navigated and all bindings are
@@ -213,9 +210,10 @@
     (> (count ctx) 1) (throw (ex-info "More than one binding present." {:ctx (mapv debug-plan ctx)}))
     :else             (first ctx)))
 
-(defrecord Disjunction [conjunctions]
+(defrecord Disjunction [conjunctions symbols]
   IBinding
-  (bound-symbols [this] (bound-symbols (first (first conjunctions))))
+  (bound-symbols [this]
+    (if (some? symbols) symbols (bound-symbols (first (first conjunctions)))))
   (plan [this]
     (let [symbols      (bound-symbols this)
           conjunctions (map extract-binding conjunctions)]
@@ -232,7 +230,7 @@
   (plan [this]
     (if debug?
       {:Negation [:_]}
-      (throw (ex-info "Unbound negation.")))))
+      (throw (ex-info "Unbound negation." {:negation this})))))
 
 (defn- const->in
   "Transforms any constant arguments into inputs."
@@ -255,12 +253,11 @@
 
 (defmethod normalize ::or [ctx [_ {:keys [clauses]}]]
   (let [conjunctions (map #(normalize [] %) clauses)]
-    (conj ctx (->Disjunction conjunctions))))
+    (conj ctx (->Disjunction conjunctions nil))))
 
-;; @TODO actually consider the -join part here
 (defmethod normalize ::or-join [ctx [_ {:keys [symbols clauses]}]]
   (let [conjunctions (map #(normalize [] %) clauses)]
-    (conj ctx (->Disjunction conjunctions))))
+    (conj ctx (->Disjunction conjunctions symbols))))
 
 (defmethod normalize ::not [ctx [_ {:keys [clauses]}]]
   (conj ctx (->Negation (reduce normalize [] clauses))))
@@ -294,6 +291,13 @@
 (comment
   (->> '[:find ?e ?n :where [?e :name ?n]] parse-query :where (reduce normalize []))
 
+  (->> '[:find ?e
+         :where
+         (or-join [?e]
+           [?e :name "Dipper"]
+           (and [?e :friend ?e2]
+                [?e2 :name "Dipper"]))] parse-query :where (reduce normalize []))
+  
   (->> '[:find ?e ?n ?a
          :where
          [?e :name ?n] [?e :age ?a]
@@ -471,9 +475,13 @@
                (instance? Disjunction next)
                (let [unified    (with-meta unified {:duplication-tag (clojure.lang.RT/nextID)})
                      unify-path (partial unify-context unified)]
-                 ;; P1 AND (P2 OR P3) = (P1 AND P2) OR (P1 AND P3) 
-                 [(update next :conjunctions #(map unify-path %))])
-               
+                 [(-> next
+                      ;; P1 AND (P2 OR P3) = (P1 AND P2) OR (P1 AND P3) 
+                      (update :conjunctions #(map unify-path %))
+                      ;; make sure or-join doesn't shadow anything
+                      (update :symbols into (mapcat bound-symbols unified))
+                      (update :symbols distinct))])
+                         
                :else
                (unify-with unified next))) unified ctx)))
 
@@ -509,6 +517,8 @@
 (comment
   (compile-query '[:find ?e ?n :where [?e :name ?n]])
 
+  (compile-query '[:find ?unbound :where [?bound :name "Dipper"]])
+
   (compile-query '[:find ?n ?e :where [?e :name ?n]])
 
   (compile-query '[:find ?e :where [?e :name "Test"]])
@@ -519,6 +529,14 @@
                    :where
                    [?e :age ?a]
                    (or [?e :name "Mabel"] [?e :name "Dipper"])])
+
+  (compile-query '[:find ?e ?a
+                   :where
+                   [?e :age ?a]
+                   (or-join [?e]
+                     [?e :name "Dipper"]
+                     (and [?e :friend ?e2]
+                          [?e2 :name "Dipper"]))])
 
   (compile-query '[:find ?user (min ?age) :where [?user :age ?age]])
 
