@@ -10,6 +10,13 @@
     (stream/consume #(println %) (bus/subscribe (:out conn) :out))
     conn))
 
+;; @TODO
+;; Naming guidelines: Tests in here should be named in such a way,
+;; that there is a one-to-one correspondence between tests and actual,
+;; user-facing query engine features.
+
+;; @TODO this test-suite should mirror the datascript tests
+
 (deftest test-basic-conjunction
   (let [db (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
     (exec! (debug-conn)
@@ -57,6 +64,23 @@
       (expect-> out (is (= [[[2] 1]] out)))
       (transact db [[:db/retract 2 :name "Mabel"]])
       (expect-> out (is (= [[[2] -1]] out))))))
+
+(deftest test-conjunction-and-disjunction
+  (let [db (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
+    (exec! (debug-conn)
+      (register-query db "conjunction-and-disjunction" '[:find ?e
+                                                         :where
+                                                         [?e :name "Mabel"]
+                                                         (or [?e :age 14]
+                                                             [?e :age 12])])
+      (transact db [[:db/add 1 :name "Dipper"] [:db/add 1 :age 14]
+                    {:db/id 2 :name "Mabel" :age 14}
+                    {:db/id 3 :name "Mabel" :age 12}
+                    {:db/id 4 :name "Mabel" :age 18}])
+      (expect-> out (is (= [[[2] 1] [[3] 1]] out)))
+      (transact db [[:db/retract 2 :name "Mabel"]
+                    [:db/retract 3 :age 12]])
+      (expect-> out (is (= [[[2] -1] [[3] -1]] out))))))
 
 (deftest test-simple-negation
   (let [db (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
