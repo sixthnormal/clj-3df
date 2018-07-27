@@ -141,8 +141,9 @@
                           (when-let [result @(stream/take! ws ::drained)]
                             (if (= result ::drained)
                               (println "[SUBSCRIBER] server closed connection")
-                              (do (bus/publish! out :out (->> result json/parse-string (into [] xf-batch)))
-                                  (recur)))))))]
+                              (let [[query_name results] (json/parse-string result)]
+                                (bus/publish! out :out [query_name (into [] xf-batch results)])
+                                (recur)))))))]
     (.start subscriber)
     (->Connection ws out subscriber)))
 

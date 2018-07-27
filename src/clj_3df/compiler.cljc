@@ -141,7 +141,6 @@
 (defrecord Disjunction [conjunctions symbols]
   IBinding
   (bound-symbols [this]
-    (info "symbols" symbols)
     (if (some? (seq symbols)) symbols (bound-symbols (first (first conjunctions)))))
   (plan [this]
     (let [symbols      (bound-symbols this)
