@@ -17,7 +17,15 @@ In most cases you would rather want to open the example source and a
 repl in your favourite Cloujre development environment and play around
 with the examples interactively.
 
-Neverthless, instructions specific to each experiment are given below.
+There is also a runner provided, that can run experiments defined as
+data (the RGA example is provided as data at
+`examples/queries/rga.edn`):
+
+``` shell
+clj -m runner <filename>
+```
+
+Instructions specific to each experiment are given below.
 
 ## LWW
 
