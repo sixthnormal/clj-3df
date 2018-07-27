@@ -1,9 +1,11 @@
-(ns clj-3df.examples.rga
+(ns rga
   (:require
+   [clojure.pprint :as pprint]
    [clj-3df.core :refer [create-conn create-db exec!
                          register-plan register-query transact]]
    [manifold.stream :as stream]
-   [manifold.bus :as bus]))
+   [manifold.bus :as bus])
+  (:gen-class))
 
 ;; RGA
 ;; https://speakerdeck.com/ept/data-structures-as-queries-expressing-crdts-using-datalog?slide=22
@@ -98,13 +100,12 @@
 
 ;; test
 
-(comment
-
+(defn -main []
   (def conn (create-conn "ws://127.0.0.1:6262"))
-  (stream/consume #(println %) (bus/subscribe (:out conn) :out))
+  (stream/consume #(pprint/pprint %) (bus/subscribe (:out conn) :out))
 
   (exec! conn
-    (register-query db "q_result" q rules)
+    (register-query db "RGA" q rules)
     ;; (register-query db "q_-id" q1 rules)
     ;; (register-query db "q_current-value" q2 rules)
     ;; (register-query db "q_next-visible" q3 rules)
@@ -134,5 +135,4 @@
                   [:db/add [1 1] :remove? true]
                   [:db/add [1 2] :remove? true]
                   {:db/id [4 1] :assign/elem [4 0] :assign/value "!"}
-                  {:db/id [4 2] :assign/elem [4 0] :assign/value "?"}]))
-  )
+                  {:db/id [4 2] :assign/elem [4 0] :assign/value "?"}])))

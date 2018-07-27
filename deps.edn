@@ -1,4 +1,4 @@
-{:paths ["src" "test"]
+{:paths ["src" "test" "examples"]
  :deps  {org.clojure/clojure {:mvn/version "1.9.0"}
          aleph               {:mvn/version "0.4.6"}
          cheshire            {:mvn/version "5.8.0"}}}

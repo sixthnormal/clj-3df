@@ -1,9 +1,11 @@
-(ns clj-3df.examples.lww
+(ns lww
   (:require
+   [clojure.pprint :as pprint]
    [clj-3df.core :refer [create-conn create-db exec!
                          register-plan register-query transact]]
    [manifold.stream :as stream]
-   [manifold.bus :as bus]))
+   [manifold.bus :as bus])
+  (:gen-class))
 
 ;; LWW Register
 ;; https://speakerdeck.com/ept/data-structures-as-queries-expressing-crdts-using-datalog?slide=15
@@ -45,10 +47,9 @@
 
 ;; test
 
-(comment
-  
+(defn -main []
   (def conn (create-conn "ws://127.0.0.1:6262"))
-  (stream/consume #(println %) (bus/subscribe (:out conn) :out))
+  (stream/consume #(pprint/pprint %) (bus/subscribe (:out conn) :out))
 
   (exec! conn (register-query db "lww_crdt" q rules))
 
@@ -69,5 +70,4 @@
   (exec! conn
     (transact db [{:db/id 3 :assign/time 6 :assign/key 200 :assign/value "Y"}])
 
-    (transact db [{:db/id 3 :assign/time 1 :assign/key 200 :assign/value "Y"}]))
-  )
+    (transact db [{:db/id 3 :assign/time 1 :assign/key 200 :assign/value "Y"}])))
