@@ -1,6 +1,7 @@
 (ns clj-3df.core
   (:refer-clojure :exclude [resolve])
   (:require
+   [clojure.pprint :as pprint]
    [clojure.string :as str]
    [clojure.set :as set]
    #?(:clj [clojure.spec.alpha :as s]
@@ -146,6 +147,11 @@
                                 (recur)))))))]
     (.start subscriber)
     (->Connection ws out subscriber)))
+
+(defn debug-conn [url]
+  (let [conn (create-conn url)]
+    (stream/consume #(pprint/pprint %) (bus/subscribe (:out conn) :out))
+    conn))
 
 (defmacro exec! [^Connection conn & forms]
   (let [c   (gensym)
