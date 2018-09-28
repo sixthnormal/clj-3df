@@ -18,41 +18,44 @@
 ;; @TODO this test-suite should mirror the datascript tests
 
 (deftest test-basic-conjunction
-  (let [db (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
+  (let [name "basic-conjunction"
+        db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
     (exec! (debug-conn)
-      (register-query db "basic-conjunction" '[:find ?e ?age :where [?e :name "Mabel"] [?e :age ?age]])
+      (register-query db name '[:find ?e ?age :where [?e :name "Mabel"] [?e :age ?age]])
       (transact db [[:db/add 1 :name "Dipper"] [:db/add 1 :age 26]])
       (transact db [{:db/id 2 :name "Mabel" :age 26}])
-      (expect-> out (is (= [[[2 26] 1]] out)))
+      (expect-> out (is (= [name [[[2 26] 1]]] out)))
       (transact db [[:db/retract 2 :name "Mabel"]])
-      (expect-> out (is (= [[[2 26] -1]] out))))))
+      (expect-> out (is (= [name [[[2 26] -1]]] out))))))
 
 (deftest test-multi-conjunction
-  (let [db (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
+  (let [name "multi-conjunction"
+        db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
     (exec! (debug-conn)
-      (register-query db "multi-conjunction" '[:find ?e1 ?e2
-                                               :where
-                                               [?e1 :name ?name] [?e1 :age ?age]
-                                               [?e2 :name ?name] [?e2 :age ?age]])
+      (register-query db name '[:find ?e1 ?e2
+                                :where
+                                [?e1 :name ?name] [?e1 :age ?age]
+                                [?e2 :name ?name] [?e2 :age ?age]])
       (transact db [{:db/id 1 :name "Dipper" :age 26}
                     {:db/id 2 :name "Mabel" :age 26}
                     {:db/id 3 :name "Soos" :age 32}])
-      (expect-> out (is (= [[[1 1] 1] [[2 2] 1] [[3 3] 1]] out)))
+      (expect-> out (is (= [name [[[1 1] 1] [[2 2] 1] [[3 3] 1]]] out)))
       (transact db [[:db/retract 2 :name "Mabel"]])
-      (expect-> out (is (= [[[2 2] -1]] out))))))
+      (expect-> out (is (= [name [[[2 2] -1]]] out))))))
 
 (deftest test-cartesian
-  (let [db (df/create-db {:name {:db/valueType :String}})]
+  (let [name "cartesian"
+        db   (df/create-db {:name {:db/valueType :String}})]
     (exec! (debug-conn)
-      ;; (register-query db "cartesian" '[:find ?e1 ?e2 :where [?e1 :name ?n1] [?e2 :name ?n2]])
-      (register-plan db "cartesian" '{:Project [{:Join [{:HasAttr [?e1 :name ?n1]}
-                                                        {:HasAttr [?e2 :name ?n2]}
-                                                        []]} [?e1 ?e2]]} [])
+      ;; (register-query db name '[:find ?e1 ?e2 :where [?e1 :name ?n1] [?e2 :name ?n2]])
+      (register-plan db name '{:Project [{:Join [{:HasAttr [?e1 :name ?n1]}
+                                                 {:HasAttr [?e2 :name ?n2]}
+                                                 []]} [?e1 ?e2]]} [])
       (transact db [[:db/add 1 :name "Dipper"]
                     [:db/add 2 :name "Mabel"]])
-      (expect-> out (is (= [[[1 1] 1] [[1 2] 1] [[2 1] 1] [[2 2] 1]] out)))
+      (expect-> out (is (= [name [[[1 1] 1] [[1 2] 1] [[2 1] 1] [[2 2] 1]]] out)))
       (transact db [[:db/retract 2 :name "Mabel"]])
-      (expect-> out (is (= [[[1 2] -1] [[2 1] -1] [[2 2] -1]] out))))))
+      (expect-> out (is (= [name [[[1 2] -1] [[2 1] -1] [[2 2] -1]]] out))))))
 
 (deftest test-basic-disjunction
   (let [db (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]

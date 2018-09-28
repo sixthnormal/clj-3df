@@ -101,31 +101,33 @@
           [:db/add v straight-a eid]
           [:db/add eid straight-a v])))))
 
-(defn transact [^DB db tx-data]
-  (let [schema    (-schema db)
-        op->diff  (fn [op]
-                    (case op
-                      :db/add     1
-                      :db/retract -1))
-        wrap-type (fn [a v]
-                    (let [type (get-in schema [a :db/valueType] :db.type/unknown)]
-                      (if (= type :db.type/unknown)
-                        (throw (ex-info "Unknown value type" {:type type}))
-                        {type v})))
-        tx-data   (reduce (fn [tx-data datum]
-                            (cond
-                              (map? datum)
-                              (->> (explode db datum)
-                                   (transact db)
-                                   :Transact
-                                   :tx_data
-                                   (into tx-data))
-                              
-                              (sequential? datum)
-                              (let [[op e a v] datum]
-                                (conj tx-data [(op->diff op) e (-attr->int db a) (wrap-type a v)]))))
-                          [] tx-data)]
-    {:Transact {:tx_data tx-data}}))
+(defn transact
+  ([^DB db tx-data] (transact db nil tx-data))
+  ([^DB db tx tx-data]
+   (let [schema    (-schema db)
+         op->diff  (fn [op]
+                     (case op
+                       :db/add     1
+                       :db/retract -1))
+         wrap-type (fn [a v]
+                     (let [type (get-in schema [a :db/valueType] :db.type/unknown)]
+                       (if (= type :db.type/unknown)
+                         (throw (ex-info "Unknown value type" {:type type}))
+                         {type v})))
+         tx-data   (reduce (fn [tx-data datum]
+                             (cond
+                               (map? datum)
+                               (->> (explode db datum)
+                                    (transact db tx)
+                                    :Transact
+                                    :tx_data
+                                    (into tx-data))
+                               
+                               (sequential? datum)
+                               (let [[op e a v] datum]
+                                 (conj tx-data [(op->diff op) e (-attr->int db a) (wrap-type a v)]))))
+                           [] tx-data)]
+     {:Transact {:tx tx :tx_data tx-data}})))
 
 (defrecord Connection [ws out subscriber])
 
