@@ -48,6 +48,7 @@
         ::or (s/cat :marker #{'or} :clauses (s/+ ::clause))
         ::or-join (s/cat :marker #{'or-join} :symbols (s/and vector? (s/+ ::variable)) :clauses (s/+ ::clause))
         ::not (s/cat :marker #{'not} :clauses (s/+ ::clause))
+        ::not-join (s/cat :marker #{'not-join} :symbols (s/and vector? (s/+ ::variable)) :clauses (s/+ ::clause))
         ::pred-expr (s/tuple (s/cat :predicate ::predicate :fn-args (s/+ ::fn-arg)))
         ::lookup (s/tuple ::eid keyword? ::variable)
         ::entity (s/tuple ::eid ::variable ::variable)
@@ -152,9 +153,10 @@
           (throw (ex-info "Bindings must be union compatible inside of an or-clause. Insert suitable projections."
                           {:unified (debug-plan this)})))))))
 
-(defrecord Negation [conjunction]
+(defrecord Negation [conjunction symbols]
   IBinding
-  (bound-symbols [this] (bound-symbols (first conjunction)))
+  (bound-symbols [this]
+    (if (some? (seq symbols)) symbols (bound-symbols (first conjunction))))
   (plan [this]
     (if debug?
       {:Negation [:_]}
@@ -263,7 +265,10 @@
     (conj ctx (->Disjunction conjunctions symbols))))
 
 (defmethod normalize ::not [ctx [_ {:keys [clauses]}]]
-  (conj ctx (->Negation (reduce normalize [] clauses))))
+  (conj ctx (->Negation (reduce normalize [] clauses) [])))
+
+(defmethod normalize ::not-join [ctx [_ {:keys [symbols clauses]}]]
+  (conj ctx (->Negation (reduce normalize [] clauses) symbols)))
 
 (defmethod normalize ::pred-expr [ctx [_ predicate-expr]]
   (let [[{:keys [predicate fn-args]}]    predicate-expr
@@ -429,7 +434,7 @@
               (->Predicate '> '[?age] nil))
 
   (unify-with [(->Relation ::hasattr '[?e :age ?age] '[?e ?age])]
-              (->Negation [(->Relation ::filter '[?e :age [:number 18]] '[?e])]))
+              (->Negation [(->Relation ::filter '[?e :age [:number 18]] '[?e])] []))
   )
 
 (defn unify-conjunction
@@ -502,7 +507,7 @@
                      (->Predicate '> '[?age] nil)])
 
   (unify-context [] [(->Relation ::hasattr '[?e :age ?age] '[?e ?age])
-                     (->Negation [(->Relation ::filter '[?e :age [:number 18]] '[?e])])])
+                     (->Negation [(->Relation ::filter '[?e :age [:number 18]] '[?e])] [])])
   )
 
 ;; PUTTING IT ALL TOGETHER
@@ -553,6 +558,13 @@
 
   (compile-query '[:find ?e ?name
                    :where [?e :name ?name] (not [?e :name "Mabel"])])
+
+  (compile-query '[:find (count ?artist)
+                   :where
+                   [?artist :artist/name ?name]
+                   (not-join [?artist]
+                     [?release :release/artists ?artist]
+                     [?release :release/year 1970])])
   
   (compile-query '[:find ?e ?n ?a
                    :where
