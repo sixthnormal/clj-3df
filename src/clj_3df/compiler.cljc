@@ -229,8 +229,8 @@
         (binds-all? binding symbols)        (cond
                                               ;; Union does a projection anyways.
                                               (instance? Disjunction binding) (plan (assoc binding :symbols symbols))
-                                              :else                           {:Project [(plan binding) symbols]})
-        debug?                              {:Project [(plan binding) symbols]}
+                                              :else                           {:Project [symbols (plan binding)]})
+        debug?                              {:Project [symbols (plan binding)]}
         :else                               (throw (ex-info "Projection on unbound symbols." {:binding (debug-plan this)}))))))
 
 ;; In the first pass the tree of (potentially) nested,

@@ -31,7 +31,7 @@
                    (compile-query '[:find ?unbound :where [?bound :name "Dipper"]]))))
 
     (is (= '{:Project
-             [{:Join [{:HasAttr [?e1 :name ?n]} {:HasAttr [?e2 :name ?n]} [?n]]} [?e1 ?n ?e2]]}
+             [[?e1 ?n ?e2] {:Join [{:HasAttr [?e1 :name ?n]} {:HasAttr [?e2 :name ?n]} [?n]]}]}
            (compile-query query)))))
 
 (deftest test-joins
@@ -45,11 +45,11 @@
     (let [query '[:find ?e1 ?n1 ?e2 ?n2
                   :where [?e1 :name ?n1] [?e1 :friend ?e2] [?e2 :name ?n2]]]
       (is (= '{:Project
-               [{:Join
+               [[?e1 ?n1 ?e2 ?n2]
+                {:Join
                  [{:Join [{:HasAttr [?e1 :name ?n1]} {:HasAttr [?e1 :friend ?e2]} [?e1]]}
                   {:HasAttr [?e2 :name ?n2]}
-                  [?e2]]}
-                [?e1 ?n1 ?e2 ?n2]]}
+                  [?e2]]}]}
              (compile-query query))))))
 
 (deftest test-or
@@ -286,11 +286,11 @@
                   [?user :age ?a2]
                   [(< ?a1 ?a2)]]]
       (is (= '{:Project
-               [{:PredExpr
+               [[?a1 ?a2]
+                {:PredExpr
                  ["LT"
                   [?a1 ?a2]
-                  {:Join [{:HasAttr [?user :age ?a1]} {:HasAttr [?user :age ?a2]} [?user]]}]}
-                [?a1 ?a2]]}
+                  {:Join [{:HasAttr [?user :age ?a1]} {:HasAttr [?user :age ?a2]} [?user]]}]}]}
              (compile-query query)))))
 
   (testing "predicate union"
@@ -434,7 +434,8 @@
                  (not (older? ?t ?key))]]]
     (is (= #{{:name "older?"
               :plan '{:Project
-                      [{:PredExpr
+                      [[?t1 ?key]
+                       {:PredExpr
                         ["LT"
                          [?t1 ?t2]
                          {:Join
@@ -446,11 +447,11 @@
                              {:HasAttr [?op2 :assign/key ?key]}
                              [?key]]}
                            {:HasAttr [?op2 :assign/time ?t2]}
-                           [?op2]]}]}
-                       [?t1 ?key]]}}
+                           [?op2]]}]}]}}
              {:name "lww"
               :plan '{:Project
-                      [{:Antijoin
+                      [[?key ?val]
+                       {:Antijoin
                         [{:Join
                           [{:Join
                             [{:HasAttr [?op :assign/time ?t]}
