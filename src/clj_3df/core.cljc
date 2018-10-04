@@ -216,12 +216,12 @@
                (->Connection ws out subscriber)))))
 
 (defn debug-conn [url]
-  (let [conn     (create-conn url)
-        out      (:out conn)]
+  (let [conn (create-conn url)
+        out  (:out conn)]
     (go-loop []
       (when-let [msg (<! out)]
-        (println msg))
-      (recur))
+        (println msg)
+        (recur)))
     conn))
 
 (defn- if-cljs [env then else]
