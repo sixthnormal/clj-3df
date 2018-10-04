@@ -109,6 +109,11 @@
       ;; @TODO split this off
       (interest name)))))
 
+(defn register-source [name source]
+  [{:RegisterSource
+    {:name   name
+     :source source}}])
+
 (defn- reverse-ref [attr]
   (if (reverse-ref? attr)
     (keyword (namespace attr) (subs (name attr) 1))
