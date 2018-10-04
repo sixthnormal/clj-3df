@@ -18,10 +18,13 @@
                                         {:causes #{:contains-nil}}))
     :else               plan))
 
+(defn encode-rule [attr->int rule]
+  (let [{:keys [name plan]} rule]
+    {:name name
+     :plan (encode-plan attr->int plan)}))
+
 (defn encode-rules [attr->int rules]
-  (mapv (fn [rule]
-          (let [{:keys [name plan]} rule]
-            {:name name :plan (encode-plan attr->int plan)})) rules))
+  (mapv (partial encode-rule attr->int) rules))
 
 (comment
   (encode-plan {} [])

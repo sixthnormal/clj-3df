@@ -78,20 +78,36 @@
         int->attr (set/map-invert attr->int)]
     (->DB schema (rschema schema) attr->int int->attr 0)))
 
-(defn register-plan [^DB db name plan rules-plan]
-  {:Register {:query_name name
-              :plan       (encode/encode-plan (partial -attr->int db) plan)
-              :rules      (encode/encode-rules (partial -attr->int db) rules-plan)}})
+(defn interest [name]
+  [{:Interest {:name name}}])
+
+(defn register-plan [^DB db name plan rules]
+  (let [;; @TODO expose this directly?
+        ;; the top-level plan is just another rule...
+        top-rule {:name name :plan plan}]
+    (concat
+     [{:Register
+       {:publish [name]
+        :rules   (->> (conj rules top-rule) (encode/encode-rules (partial -attr->int db)))}}]
+     ;; @TODO split this off
+     (interest name))))
 
 (defn register-query
   ([^DB db name query] (register-query db name query []))
   ([^DB db name query rules]
-   (let [rules-plan (if (empty? rules)
-                      []
-                      (compiler/compile-rules rules))]
-     {:Register {:query_name name
-                 :plan       (encode/encode-plan (partial -attr->int db) (compiler/compile-query query))
-                 :rules      (encode/encode-rules (partial -attr->int db) rules-plan)}})))
+   (let [;; @TODO expose this directly?
+         ;; the top-level plan is just another rule...
+         top-rule       {:name name :plan (compiler/compile-query query)}
+         compiled-rules (if (empty? rules)
+                          []
+                          (compiler/compile-rules rules))]
+     (concat 
+      [{:Register
+        {:publish [name]
+         :rules   (->> (conj compiled-rules top-rule)
+                       (encode/encode-rules (partial -attr->int db)))}}]
+      ;; @TODO split this off
+      (interest name)))))
 
 (defn- reverse-ref [attr]
   (if (reverse-ref? attr)
@@ -133,6 +149,7 @@
                                (map? datum)
                                (->> (explode db datum)
                                     (transact db tx)
+                                    first
                                     :Transact
                                     :tx_data
                                     (into tx-data))
@@ -141,7 +158,7 @@
                                (let [[op e a v] datum]
                                  (conj tx-data [(op->diff op) e (-attr->int db a) (wrap-type a v)]))))
                            [] tx-data)]
-     {:Transact {:tx tx :tx_data tx-data}})))
+     [{:Transact {:tx tx :tx_data tx-data}}])))
 
 (defrecord Connection [ws out subscriber])
 
