@@ -30,18 +30,18 @@
 (defprotocol IDB
   (-schema [db])
   (-attrs-by [db property])
-  (-attr->int [db attr])
-  (-int->attr [db i]))
+  (-attribute->id [db attr])
+  (-id->attribute [db id]))
 
-(defrecord DB [schema rschema attr->int int->attr next-tx]
+(defrecord DB [schema rschema attribute->id id->attribute next-tx]
   IDB
   (-schema [db] (.-schema db))
   (-attrs-by [db property] ((.-rschema db) property))
-  (-attr->int [db attr]
-    (if-let [[k v] (find attr->int attr)]
+  (-attribute->id [db attr]
+    (if-let [[k v] (find attribute->id attr)]
       v
       (throw (ex-info "Unknown attribute." {:attr attr}))))
-  (-int->attr [db i] (int->attr i)))
+  (-id->attribute [db id] (id->attribute id)))
 
 (defn- ^Boolean is-attr? [^DB db attr property] (contains? (-attrs-by db property) attr))
 (defn- ^Boolean multival? [^DB db attr] (is-attr? db attr :db.cardinality/many))
@@ -74,9 +74,10 @@
     {} schema))
 
 (defn create-db [schema]
-  (let [attr->int (zipmap (keys schema) (iterate (partial + 100) 100))
-        int->attr (set/map-invert attr->int)]
-    (->DB schema (rschema schema) attr->int int->attr 0)))
+  (let [attribute->id (into {} (map (juxt identity str) (keys schema)))
+        id->attribute (set/map-invert attribute->id)]
+    (->DB schema (rschema schema) attribute->id id->attribute 0)))
+
 
 (defn interest [name]
   [{:Interest {:name name}}])
@@ -88,7 +89,7 @@
     (concat
      [{:Register
        {:publish [name]
-        :rules   (->> (conj rules top-rule) (encode/encode-rules (partial -attr->int db)))}}]
+        :rules   (->> (conj rules top-rule) (encode/encode-rules (partial -attribute->id db)))}}]
      ;; @TODO split this off
      (interest name))))
 
@@ -101,11 +102,11 @@
          compiled-rules (if (empty? rules)
                           []
                           (compiler/compile-rules rules))]
-     (concat 
+     (concat
       [{:Register
         {:publish [name]
          :rules   (->> (conj compiled-rules top-rule)
-                       (encode/encode-rules (partial -attr->int db)))}}]
+                       (encode/encode-rules (partial -attribute->id db)))}}]
       ;; @TODO split this off
       (interest name)))))
 
@@ -113,6 +114,14 @@
   [{:RegisterSource
     {:name   name
      :source source}}])
+
+(defmulti create-input class)
+
+(defmethod create-input clojure.lang.Keyword [attr]
+  [{:CreateInput {:name (str attr)}}])
+
+(defmethod create-input clj_3df.core.DB [db]
+  (reduce-kv (fn [acc k v] (conj acc {:CreateInput {:name (str k)}})) [] (-schema db)))
 
 (defn- reverse-ref [attr]
   (if (reverse-ref? attr)
@@ -158,10 +167,10 @@
                                     :Transact
                                     :tx_data
                                     (into tx-data))
-                               
+
                                (sequential? datum)
                                (let [[op e a v] datum]
-                                 (conj tx-data [(op->diff op) e (-attr->int db a) (wrap-type a v)]))))
+                                 (conj tx-data [(op->diff op) e (-attribute->id db a) (wrap-type a v)]))))
                            [] tx-data)]
      [{:Transact {:tx tx :tx_data tx-data}}])))
 
