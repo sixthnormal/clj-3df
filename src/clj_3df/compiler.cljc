@@ -214,7 +214,7 @@
     (if (some? binding) (bound-symbols binding) args))
   (plan [this]
     (if (some? binding)
-      {:Aggregate [(bound-symbols binding) (plan binding) (str/upper-case (name fn-symbol)) args]}
+      {:Aggregate [(bound-symbols binding) (plan binding) (str/upper-case (name fn-symbol)) (remove (set args) (bound-symbols binding))]}
       (if debug?
         {:Aggregate [args :_ (str/upper-case (name fn-symbol))]}
         (throw (ex-info "All aggregate arguments must be bound by a single relation." {:binding this}))))))
@@ -518,12 +518,12 @@
 (defn compile-query [query]
   (let [ir          (parse-query query)
         unified     (->> (:where ir) (reduce normalize []) unify-context extract-binding)
-        projection  (->> (:find ir) extract-find-symbols (->Projection unified))
         aggregation (->> (:find ir)
                          extract-aggregations
                          (reduce (fn [unified {:keys [aggregation-fn vars]}]
-                                   (->Aggregation aggregation-fn vars unified)) projection))]
-    (plan aggregation)))
+                                   (->Aggregation aggregation-fn vars unified)) unified))
+        projection  (->> (:find ir) extract-find-symbols (->Projection aggregation))]
+    (plan projection)))
 
 (comment
   (compile-query '[:find ?e ?n :where [?e :name ?n]])
