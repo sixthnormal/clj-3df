@@ -56,7 +56,8 @@
         ::entity (s/tuple ::eid ::variable ::variable)
         ::hasattr (s/tuple ::variable keyword? ::variable)
         ::filter (s/tuple ::variable keyword? ::value)
-        ::rule-expr (s/cat :rule-name ::rule-name :fn-args (s/+ ::fn-arg))))
+        ::rule-expr (s/cat :rule-name ::rule-name :fn-args (s/+ ::fn-arg))
+        ::fn-expr (s/tuple (s/cat :fn ::function :fn-args (s/+ ::fn-arg)) ::variable)))
 
 (s/def ::aggregate (s/cat :aggregation-fn ::aggregation-fn :vars (s/+ ::variable)))
 
@@ -77,6 +78,7 @@
                      :bool   boolean?))
 (s/def ::predicate '#{<= < > >= = not=})
 (s/def ::aggregation-fn '#{min max count})
+(s/def ::function '#{interval})
 (s/def ::fn-arg (s/or :var ::variable :const ::value))
 
 ;; PARSING
@@ -233,6 +235,19 @@
         debug?                              {:Project [symbols (plan binding)]}
         :else                               (throw (ex-info "Projection on unbound symbols." {:binding (debug-plan this)}))))))
 
+(defrecord FnExpr [fn args result-sym binding]
+  IBinding
+  (bound-symbols [this]
+    (if (some? binding) (bound-symbols binding) args))
+  (plan [this]
+    (let [encode-fn name
+          symbols   (bound-symbols this)]
+      (if (some? binding)
+        {:Transform [args (encode-fn fn) (plan binding)]}
+        (if debug?
+          {:Transform [args (encode-fn fn) :_]}
+          (throw (ex-info "All function inputs must be bound in a single relation." {:binding this})))))))
+
 ;; In the first pass the tree of (potentially) nested,
 ;; context-modifying operators is navigated and all bindings are
 ;; brought into a form that we can work with. This mostly means
@@ -297,6 +312,13 @@
     (-> ctx
         (into inputs)
         (conj (->RuleExpr rule-name normalized-args)))))
+
+(defmethod normalize ::fn-expr [ctx [_ fn-expr]]
+  (let [[{:keys [fn fn-args]} result-sym] fn-expr
+        {:keys [inputs normalized-args]}  (const->in fn-args)]
+    (-> ctx
+        (into inputs)
+        (conj (->FnExpr fn normalized-args result-sym nil)))))
 
 (comment
   (->> '[:find ?e ?n :where [?e :name ?n]] parse-query :where (reduce normalize []))
@@ -399,6 +421,7 @@
 (derive Relation ::binding)
 (derive RuleExpr ::binding)
 (derive Predicate ::binding)
+(derive FnExpr ::binding)
 (derive Join ::binding)
 (derive Antijoin ::binding)
 
@@ -473,6 +496,12 @@
 (defmethod unify [Projection Predicate] [proj pred] (update proj :binding unify pred))
 ;; @TODO compose predicate functions
 (defmethod unify [Predicate Predicate] [p1 p2] (update p1 :binding unify p2))
+
+(defmethod unify [::binding FnExpr] [b1 b2] (unify b2 b1))
+(defmethod unify [FnExpr ::binding] [f binding] (update f :binding unify binding))
+(defmethod unify [FnExpr Projection] [b1 b2] (unify b2 b1))
+(defmethod unify [Projection FnExpr] [proj f] (update proj :binding unify f))
+(defmethod unify [FnExpr FnExpr] [p1 p2] (update p1 :binding unify p2))
 
 (defn unify-context
   "Unifies a full context, which can contain both conjunctions and

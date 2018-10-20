@@ -469,3 +469,13 @@
                   :where [?user :age ?age]]]
       (is (= '{:Aggregate [[?user ?age] {:MatchA [?user :age ?age]} "MIN" [?user]]}
              (compile-query query))))))
+
+(deftest test-functions
+  (let [query '[:find ?e ?t
+                :where
+                [?e :event/time ?t] [(interval ?t) ?t]]]
+    (is (= '{:Transform
+             [[?t]
+              "interval"
+              {:MatchA [?e :event/time ?t]}]}
+           (compile-query query)))))
