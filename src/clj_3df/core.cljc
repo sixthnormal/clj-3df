@@ -231,6 +231,12 @@
         (recur)))
     conn))
 
+(defn exec-raw! [conn requests]
+  (->> requests
+       (stringify)
+       #?(:clj (stream/put! (.-ws conn)))
+       #?(:cljs (>! (:sink (.-ws conn))))))
+
 (defn- if-cljs [env then else]
   (if (:ns env) then else))
 
@@ -287,6 +293,8 @@
   (exec! conn (transact db [[:db/retract 2 :name "Mabel"]]))
 
   (exec! conn (register-query db "basic-disjunction" '[:find ?e :where (or [?e :name "Mabel"] [?e :name "Dipper"])]))
+
+  (exec-raw! conn [{:CreateInput {:name "64"}} {:CreateInput {:name "63"}}])
 
   )
 
