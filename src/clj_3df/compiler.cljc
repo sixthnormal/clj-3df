@@ -77,7 +77,7 @@
                      :string string?
                      :bool   boolean?))
 (s/def ::predicate '#{<= < > >= = not=})
-(s/def ::aggregation-fn '#{min max count})
+(s/def ::aggregation-fn '#{min max count median sum avg variance})
 (s/def ::function '#{interval})
 (s/def ::fn-arg (s/or :var ::variable :const ::value))
 
@@ -210,16 +210,16 @@
           {:Filter [args (encode-predicate predicate) :_]}
           (throw (ex-info "All predicate inputs must be bound in a single relation." {:binding this})))))))
 
-(defrecord Aggregation [fn-symbol args binding]
+(defrecord Aggregation [fn-symbol args key-symbols binding symbols]
   IBinding
-  (bound-symbols [this]
-    (if (some? binding) (bound-symbols binding) args))
+  (bound-symbols [this] symbols)
   (plan [this]
-    (if (some? binding)
-      {:Aggregate [(bound-symbols binding) (plan binding) (str/upper-case (name fn-symbol)) (remove (set args) (bound-symbols binding))]}
-      (if debug?
-        {:Aggregate [args :_ (str/upper-case (name fn-symbol))]}
-        (throw (ex-info "All aggregate arguments must be bound by a single relation." {:binding this}))))))
+    (let [symbols (bound-symbols this)]
+      (if (binds-all? binding symbols)
+        {:Aggregate [symbols (plan binding) (str/upper-case (name fn-symbol)) key-symbols]}
+        (if debug?
+          {:Aggregate [args :_ (str/upper-case (name fn-symbol)) symbols]}
+          (throw (ex-info "Aggregation on unbound symbols." {:binding (debug-plan this)})))))))
 
 (defrecord Projection [binding symbols]
   IBinding
@@ -240,10 +240,10 @@
   (bound-symbols [this]
     (if (some? binding) (bound-symbols binding) args))
   (plan [this]
-    (let [encode-fn name
+    (let [encode-fn (comp str/upper-case name)
           symbols   (bound-symbols this)]
       (if (some? binding)
-        {:Transform [args (encode-fn fn) (plan binding)]}
+        {:Transform [args (plan binding) (encode-fn fn)]}
         (if debug?
           {:Transform [args (encode-fn fn) :_]}
           (throw (ex-info "All function inputs must be bound in a single relation." {:binding this})))))))
@@ -373,12 +373,18 @@
     :var       []
     :aggregate [pattern]))
 
-(comment
-  (-> '[:find ?e ?n :where [?e :name ?n]] parse-query :find extract-find-symbols)
+(defn- extract-key-symbols [[typ pattern]]
+  (case typ
+    ::find-rel (mapcat extract-key-symbols pattern)
+    :var       [pattern]
+    :aggregate []))
 
-  (-> '[:find ?e (count ?n) :where [?e :name ?n]] parse-query :find extract-find-symbols)
+(comment
+  (-> '[:find ?e ?n :where [?e :name ?n]] parse-query  extract-find-symbols)
 
   (-> '[:find ?e (count ?n) :where [?e :name ?n]] parse-query :find extract-aggregations)
+
+  (-> '[:find ?e (count ?n) (count ?a) :where [?e :name ?n]] parse-query :find extract-key-symbols)
   )
 
 ;; UNIFICATION
@@ -458,6 +464,9 @@
   (unify-with [(->Relation ::hasattr '[?e :age ?age] '[?e ?age])]
               (->Predicate '> '[?age] nil))
 
+  (unify-with [(->Predicate '> '[?t ?cutoff] (->Relation ::hasattr '[?e :time ?t] '[?e ?t]))]
+              (->FnExpr :interval '[?t] '[?t] nil))
+
   (unify-with [(->Relation ::hasattr '[?e :age ?age] '[?e ?age])]
               (->Negation [(->Relation ::filter '[?e :age [:number 18]] '[?e])] []))
   )
@@ -496,12 +505,16 @@
 (defmethod unify [Projection Predicate] [proj pred] (update proj :binding unify pred))
 ;; @TODO compose predicate functions
 (defmethod unify [Predicate Predicate] [p1 p2] (update p1 :binding unify p2))
+(defmethod unify [Predicate FnExpr] [pred f] (unify f pred))
 
 (defmethod unify [::binding FnExpr] [b1 b2] (unify b2 b1))
 (defmethod unify [FnExpr ::binding] [f binding] (update f :binding unify binding))
 (defmethod unify [FnExpr Projection] [b1 b2] (unify b2 b1))
 (defmethod unify [Projection FnExpr] [proj f] (update proj :binding unify f))
 (defmethod unify [FnExpr FnExpr] [p1 p2] (update p1 :binding unify p2))
+(defmethod unify [FnExpr Predicate] [f pred] (update f :binding unify pred))
+
+
 
 (defn unify-context
   "Unifies a full context, which can contain both conjunctions and
@@ -547,10 +560,13 @@
 (defn compile-query [query]
   (let [ir          (parse-query query)
         unified     (->> (:where ir) (reduce normalize []) unify-context extract-binding)
-        aggregation (->> (:find ir)
-                         extract-aggregations
-                         (reduce (fn [unified {:keys [aggregation-fn vars]}]
-                                   (->Aggregation aggregation-fn vars unified)) unified))
+        find-syms   (extract-find-symbols (:find ir))
+        key-syms    (extract-key-symbols (:find ir))
+        aggregation (if-let [[agg & remaining :as all] (-> (:find ir) extract-aggregations seq)]
+                      (if remaining
+                        (throw (ex-info "Only single aggregations are supported" {:call all}))
+                        (->Aggregation (:aggregation-fn agg) (:vars agg) key-syms unified find-syms))
+                      unified)
         projection  (->> (:find ir) extract-find-symbols (->Projection aggregation))]
     (plan projection)))
 
@@ -561,9 +577,9 @@
 
   (compile-query '[:find ?n ?e :where [?e :name ?n]])
 
-  (compile-query '[:find ?e :where [?e :name "Test"]])
+  (compile-query '[:find (count ?e) :where [?e :name "Dipper"]])
 
-  (compile-query '[:find ?e ?n ?a :where [?e :age ?a] [?e :name ?n]])
+  (compile-query '[:find ?e ?a (count ?n) :where [?e :age ?a] [?e :name ?n]])
 
   (compile-query '[:find ?e ?a
                    :where
