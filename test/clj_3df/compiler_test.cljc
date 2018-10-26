@@ -490,3 +490,16 @@
                 {:Filter [[?t ?cutoff] "GT" {:MatchA [?e :event/time ?t]} {}]}
                 "INTERVAL"]}
              (compile-query query))))))
+
+(deftest test-name-expressions
+  (testing "global rules are converted to NameExpr"
+    (let [query '[:find ?x ?y
+                  :where (org.example/global-rule ?x ?y)]]
+      (is (= '{:NameExpr [[?x ?y] "org.example/global-rule"]}
+             (compile-query query)))))
+
+  (testing "local rules stay RuleExpr"
+    (let [query '[:find ?x ?y
+                  :where (local-rule ?x ?y)]]
+      (is (= '{:RuleExpr [[?x ?y] "local-rule"]}
+             (compile-query query))))))

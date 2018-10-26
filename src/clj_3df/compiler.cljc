@@ -193,7 +193,14 @@
 (defrecord RuleExpr [rule-name symbols]
   IBinding
   (bound-symbols [this] symbols)
-  (plan [this] {:RuleExpr [(bound-symbols this) (str rule-name)]}))
+  (plan [this]
+    (let [name (str rule-name)]
+      ;; @TODO
+      ;; For now this is how we check whether a rule is globally
+      ;; registered. Should probably be more explicit eventually.
+      (if (str/includes? name "/")
+        {:NameExpr [(bound-symbols this) name]}
+        {:RuleExpr [(bound-symbols this) name]}))))
 
 ;; Predicate epxressions, aggregations, and projections act on
 ;; existing bindings.
