@@ -471,24 +471,31 @@
              (compile-query query))))))
 
 (deftest test-functions
-  (testing "fn"
+  (testing "fn-in-place"
     (let [query '[:find ?e ?t
                   :where
                   [?e :event/time ?t] [(interval ?t) ?t]]]
-      (is (= '{:Transform
-               [[?t]
-                {:MatchA [?e :event/time ?t]}
-                "INTERVAL"]}
-             (compile-query query)))))
+      (is (thrown? clojure.lang.ExceptionInfo (compile-query query)))))
+  (testing "fn"
+      (let [query '[:find ?e ?h
+                    :where
+                    [?e :event/time ?t] [(interval ?t) ?h]]]
+        (is (= '{:Project
+                 [[?e ?h]
+                  {:Transform
+                   [[?t] ?h {:MatchA [?e :event/time ?t]}]}]}))))
   (testing "fn-pred"
-    (let [query '[:find ?e ?t
+    (let [query '[:find ?e ?h
                   :in ?cutoff
                   :where
-                  [?e :event/time ?t][(> ?t ?cutoff)][(interval ?t) ?t]]]
-      (is (= '{:Transform
-               [[?t]
-                {:Filter [[?t ?cutoff] "GT" {:MatchA [?e :event/time ?t]} {}]}
-                "INTERVAL"]}
+                  [?e :event/time ?t][(> ?t ?cutoff)][(interval ?t) ?h]]]
+      (is (= '{:Project
+               [[?e ?h]
+                {:Transform
+                 [[?t]
+                  ?h
+                  {:Filter [[?t ?cutoff] "GT" {:MatchA [?e :event/time ?t]} {}]}
+                  "INTERVAL"]}]}
              (compile-query query))))))
 
 (deftest test-name-expressions
