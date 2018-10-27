@@ -246,14 +246,13 @@
 (defrecord FnExpr [fn args result-sym binding]
   IBinding
   (bound-symbols [this]
-    (if (some? binding) (bound-symbols binding) args))
+    (if (some? binding) (conj (bound-symbols binding) result-sym) (conj args result-sym)))
   (plan [this]
-    (let [encode-fn (comp str/upper-case name)
-          symbols   (bound-symbols this)]
+    (let [encode-fn (comp str/upper-case name)]
       (if (some? binding)
-        {:Transform [args (plan binding) (encode-fn fn)]}
+        {:Transform [args result-sym (plan binding) (encode-fn fn)]}
         (if debug?
-          {:Transform [args (encode-fn fn) :_]}
+          {:Transform [args result-sym (encode-fn fn) :_]}
           (throw (ex-info "All function inputs must be bound in a single relation." {:binding this})))))))
 
 ;; In the first pass the tree of (potentially) nested,
@@ -322,8 +321,10 @@
 (defmethod normalize ::fn-expr [ctx [_ fn-expr]]
   (let [[{:keys [fn fn-args]} result-sym] fn-expr
          {:keys [offset->const normalized-args]}  (normalize-arguments fn-args)]
+    (if (some #(= result-sym %) normalized-args)
+      (throw (ex-info "In-place transformations are not allowed!" {}))
     (-> ctx
-        (conj (->FnExpr fn normalized-args result-sym nil)))))
+        (conj (->FnExpr fn normalized-args result-sym nil))))))
 
 (comment
   (->> '[:find ?e ?n :where [?e :name ?n]] parse-query :where (reduce normalize []))
