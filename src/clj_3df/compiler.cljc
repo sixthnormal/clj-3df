@@ -88,7 +88,7 @@
 
 (s/def ::predicate '#{<= < > >= = not=})
 (s/def ::aggregation-fn '#{min max count median sum avg variance})
-(s/def ::function '#{interval})
+(s/def ::function '#{truncate})
 (s/def ::fn-arg (s/or :var ::variable :const ::value))
 
 ;; PARSING
@@ -475,7 +475,7 @@
               (->Predicate '> '[?age] nil {}))
 
   (unify-with [(->Predicate '> '[?t ?cutoff] (->Relation ::hasattr '[?e :time ?t] '[?e ?t]) {})]
-              (->FnExpr :interval '[?t] '[?t] nil))
+              (->FnExpr :truncate '[?t] '[?t] nil))
 
   (unify-with [(->Relation ::hasattr '[?e :age ?age] '[?e ?age])]
               (->Negation [(->Relation ::filter '[?e :age [:number 18]] '[?e])] []))
@@ -586,7 +586,7 @@
 
   (compile-query '[:find ?unbound :where [?bound :name "Dipper"]])
 
-  (compile-query '[:find ?n ?e :where [?e :name ?n]])
+  (compile-query '[:find ?n ?p :where [?e :name ?n][(truncate ?n :hour) ?p]])
 
   (compile-query '[:find (count ?e) :where [?e :name "Dipper"]])
 

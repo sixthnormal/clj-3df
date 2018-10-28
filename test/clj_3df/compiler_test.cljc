@@ -474,28 +474,29 @@
   (testing "fn-in-place"
     (let [query '[:find ?e ?t
                   :where
-                  [?e :event/time ?t] [(interval ?t) ?t]]]
+                  [?e :event/time ?t] [(truncate ?t) ?t]]]
       (is (thrown? clojure.lang.ExceptionInfo (compile-query query)))))
   (testing "fn"
       (let [query '[:find ?e ?h
                     :where
-                    [?e :event/time ?t] [(interval ?t) ?h]]]
+                    [?e :event/time ?t] [(truncate ?t) ?h]]]
         (is (= '{:Project
                  [[?e ?h]
                   {:Transform
-                   [[?t] ?h {:MatchA [?e :event/time ?t]}]}]}))))
+                   [[?t] ?h {:MatchA [?e :event/time ?t]} "TRUNCATE" {}]}]}
+               (compile-query query)))))
   (testing "fn-pred"
     (let [query '[:find ?e ?h
                   :in ?cutoff
                   :where
-                  [?e :event/time ?t][(> ?t ?cutoff)][(interval ?t) ?h]]]
+                  [?e :event/time ?t][(> ?t ?cutoff)][(truncate ?t) ?h]]]
       (is (= '{:Project
                [[?e ?h]
                 {:Transform
                  [[?t]
                   ?h
                   {:Filter [[?t ?cutoff] "GT" {:MatchA [?e :event/time ?t]} {}]}
-                  "INTERVAL"]}]}
+                  "TRUNCATE" {}]}]}
              (compile-query query))))))
 
 (deftest test-name-expressions
