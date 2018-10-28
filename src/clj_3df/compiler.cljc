@@ -36,6 +36,7 @@
   (cond
     (string? v)  {:String v}
     (number? v)  {:Number v}
+    (keyword? v) {:String (str v)}
     (boolean? v) {:Bool v}))
 
 ;; GRAMMAR
@@ -79,9 +80,12 @@
 ;;                       ::variable ::variable))
 (s/def ::variable (s/and symbol?
                          #(-> % name (str/starts-with? "?"))))
-(s/def ::value (s/or :number number?
-                     :string string?
-                     :bool   boolean?))
+
+(s/def ::value (s/or :number  number?
+                     :string  string?
+                     :keyword keyword?
+                     :bool    boolean?))
+
 (s/def ::predicate '#{<= < > >= = not=})
 (s/def ::aggregation-fn '#{min max count median sum avg variance})
 (s/def ::function '#{interval})
@@ -243,16 +247,16 @@
         debug?                              {:Project [symbols (plan binding)]}
         :else                               (throw (ex-info "Projection on unbound symbols." {:binding (debug-plan this)}))))))
 
-(defrecord FnExpr [fn args result-sym binding]
+(defrecord FnExpr [fn args result-sym binding offset->const]
   IBinding
   (bound-symbols [this]
     (if (some? binding) (conj (bound-symbols binding) result-sym) (conj args result-sym)))
   (plan [this]
     (let [encode-fn (comp str/upper-case name)]
       (if (some? binding)
-        {:Transform [args result-sym (plan binding) (encode-fn fn)]}
+        {:Transform [args result-sym (plan binding) (encode-fn fn) offset->const]}
         (if debug?
-          {:Transform [args result-sym (encode-fn fn) :_]}
+          {:Transform [args result-sym (encode-fn fn) :_ offset->const]}
           (throw (ex-info "All function inputs must be bound in a single relation." {:binding this})))))))
 
 ;; In the first pass the tree of (potentially) nested,
@@ -324,7 +328,7 @@
     (if (some #(= result-sym %) normalized-args)
       (throw (ex-info "In-place transformations are not allowed!" {}))
     (-> ctx
-        (conj (->FnExpr fn normalized-args result-sym nil))))))
+        (conj (->FnExpr fn normalized-args result-sym nil offset->const))))))
 
 (comment
   (->> '[:find ?e ?n :where [?e :name ?n]] parse-query :where (reduce normalize []))
