@@ -284,27 +284,5 @@
 
   (exec! conn (register-query db "basic-disjunction" '[:find ?e :where (or [?e :name "Mabel"] [?e :name "Dipper"])]))
 
-  (exec-raw! conn [{:CreateInput {:name "64"}} {:CreateInput {:name "63"}}])
-
   )
 
-(comment
-
-  (def db (create-db {:edge  {:db/valueType :Eid}
-                      :label {:db/valueType :Eid}}))
-
-  (def rules
-    '[[(label ?x ?y) [?x :label ?y]]
-      #_[(label ?x ?y) [?z :edge ?y] (label ?x ?z)]])
-
-  (def conn (debug-conn "ws://127.0.0.1:6262"))
-
-  (exec! conn
-    (register-query db "labelprop" '[:find (count ?x ?y) :where (label ?x ?y)] rules))
-
-  (exec! conn
-    ;; (register-source "edge" {:PlainFile {:path "./data/labelprop/edges.httpd_df"}})
-    (register-source "label" {:PlainFile {:path "./data/labelprop/nodes.httpd_df"}})
-    )
-  
-  )
