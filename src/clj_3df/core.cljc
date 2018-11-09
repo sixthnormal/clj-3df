@@ -30,18 +30,12 @@
 (defprotocol IDB
   (-schema [db])
   (-attrs-by [db property])
-  (-attribute->id [db attr])
   (-id->attribute [db id]))
 
-(defrecord DB [schema rschema attribute->id id->attribute next-tx]
+(defrecord DB [schema rschema next-tx]
   IDB
   (-schema [db] (.-schema db))
-  (-attrs-by [db property] ((.-rschema db) property))
-  (-attribute->id [db attr]
-    (if-let [[k v] (find attribute->id attr)]
-      v
-      (throw (ex-info "Unknown attribute." {:attr attr}))))
-  (-id->attribute [db id] (id->attribute id)))
+  (-attrs-by [db property] ((.-rschema db) property)))
 
 (defn- ^Boolean is-attr? [^DB db attr property] (contains? (-attrs-by db property) attr))
 (defn- ^Boolean multival? [^DB db attr] (is-attr? db attr :db.cardinality/many))
@@ -74,10 +68,7 @@
     {} schema))
 
 (defn create-db [schema]
-  (let [attribute->id (into {} (map (juxt identity str) (keys schema)))
-        id->attribute (set/map-invert attribute->id)]
-    (->DB schema (rschema schema) attribute->id id->attribute 0)))
-
+  (->DB schema (rschema schema) 0))
 
 (defn interest [name]
   [{:Interest {:name name}}])
@@ -89,7 +80,7 @@
     (concat
      [{:Register
        {:publish [name]
-        :rules   (->> (conj rules top-rule) (encode/encode-rules (partial -attribute->id db)))}}]
+        :rules   (encode/encode-rules (conj rules top-rule))}}]
      ;; @TODO split this off
      (interest name))))
 
@@ -105,21 +96,20 @@
      (concat
       [{:Register
         {:publish [name]
-         :rules   (->> (conj compiled-rules top-rule)
-                       (encode/encode-rules (partial -attribute->id db)))}}]
+         :rules   (encode/encode-rules (conj compiled-rules top-rule))}}]
       ;; @TODO split this off
       (interest name)))))
 
-(defn register-source [name source]
+(defn register-source [names source]
   [{:RegisterSource
-    {:name   name
+    {:names  (mapv encode/encode-keyword names)
      :source source}}])
 
 (defn create-input [attr]
-  [{:CreateInput {:name (str attr)}}])
+  [{:CreateInput {:name (encode/encode-keyword attr)}}])
 
 (defn create-db-inputs [^DB db]
-  (reduce-kv (fn [acc k v] (conj acc {:CreateInput {:name (str k)}})) [] (-schema db)))
+  (mapcat create-input (keys (.-schema db))))
 
 (defn- reverse-ref [attr]
   (if (reverse-ref? attr)
@@ -168,7 +158,7 @@
 
                                (sequential? datum)
                                (let [[op e a v] datum]
-                                 (conj tx-data [(op->diff op) e (-attribute->id db a) (wrap-type a v)]))))
+                                 (conj tx-data [(op->diff op) e (encode/encode-keyword a) (wrap-type a v)]))))
                            [] tx-data)]
      [{:Transact {:tx tx :tx_data tx-data}}])))
 
