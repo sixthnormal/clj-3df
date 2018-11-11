@@ -583,7 +583,7 @@
         unified     (->> (:where ir) (reduce normalize []) unify-context extract-binding)
         find-syms   (extract-find-symbols (:find ir))
         key-syms    (extract-key-symbols (:find ir))
-        projection  (->Projection unified (reduce-kv (fn [acc k v] (conj acc (first v))) [] (group-by name find-syms)))
+        projection  (->Projection unified (distinct find-syms))
         aggregation (if-let [[agg & remaining :as all] (-> (:find ir) extract-aggregations seq)]
                       (if remaining
                         (->AggregationMulti (map :aggregation-fn all) (mapcat :vars all) key-syms projection find-syms)
