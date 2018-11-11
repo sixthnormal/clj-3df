@@ -88,7 +88,7 @@
 
 (s/def ::predicate '#{<= < > >= = not=})
 (s/def ::aggregation-fn '#{min max count median sum avg variance})
-(s/def ::function '#{truncate})
+(s/def ::function '#{truncate concat})
 (s/def ::fn-arg (s/or :var ::variable :const ::value))
 
 ;; PARSING
@@ -228,9 +228,20 @@
   (plan [this]
     (let [symbols (bound-symbols this)]
       (if (binds-all? binding symbols)
-        {:Aggregate [symbols (plan binding) (str/upper-case (name fn-symbol)) key-symbols]}
+        {:Aggregate [symbols (plan binding) (str/upper-case (name fn-symbol)) key-symbols args]}
         (if debug?
           {:Aggregate [args :_ (str/upper-case (name fn-symbol)) symbols]}
+          (throw (ex-info "Aggregation on unbound symbols." {:binding (debug-plan this)})))))))
+
+(defrecord AggregationMulti [fn-symbols args key-symbols binding symbols]
+  IBinding
+  (bound-symbols [this] symbols)
+  (plan [this]
+    (let [symbols (bound-symbols this)]
+      (if (binds-all? binding symbols)
+        {:AggregateMulti [symbols (plan binding) (map (comp str/upper-case name) fn-symbols) key-symbols args]}
+        (if debug?
+          {:AggregateMulti [args :_ (map (comp str/upper-case name) fn-symbols) symbols]}
           (throw (ex-info "Aggregation on unbound symbols." {:binding (debug-plan this)})))))))
 
 (defrecord Projection [binding symbols]
@@ -572,10 +583,10 @@
         unified     (->> (:where ir) (reduce normalize []) unify-context extract-binding)
         find-syms   (extract-find-symbols (:find ir))
         key-syms    (extract-key-symbols (:find ir))
-        projection  (->Projection unified find-syms)
+        projection  (->Projection unified (distinct find-syms))
         aggregation (if-let [[agg & remaining :as all] (-> (:find ir) extract-aggregations seq)]
                       (if remaining
-                        (throw (ex-info "Only single aggregations in the :find clause are supported for now" {}))
+                        (->AggregationMulti (map :aggregation-fn all) (mapcat :vars all) key-syms projection find-syms)
                         (->Aggregation (:aggregation-fn agg) (:vars agg) key-syms projection find-syms))
                       projection)
         ]
