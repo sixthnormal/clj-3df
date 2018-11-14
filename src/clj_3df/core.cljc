@@ -111,6 +111,9 @@
 (defn create-db-inputs [^DB db]
   (mapcat create-input (keys (.-schema db))))
 
+(defn close-input [attr]
+  [{:CloseInput {:name (encode/encode-keyword attr)}}])
+
 (defn- reverse-ref [attr]
   (if (reverse-ref? attr)
     (keyword (namespace attr) (subs (name attr) 1))
