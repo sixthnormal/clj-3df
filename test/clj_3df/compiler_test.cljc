@@ -467,7 +467,7 @@
   (testing "min"
     (let [query '[:find ?user (min ?age)
                   :where [?user :age ?age]]]
-      (is (= '{:Aggregate [[?user ?age] {:MatchA [?user :age ?age]} "MIN" [?user] [?age]]}
+      (is (= '{:Aggregate [[?user ?age] {:MatchA [?user :age ?age]} ["MIN"] [?user] [?age] []]}
              (compile-query query))))))
 
 (deftest test-functions
@@ -511,3 +511,16 @@
                   :where (local-rule ?x ?y)]]
       (is (= '{:RuleExpr [[?x ?y] "local-rule"]}
              (compile-query query))))))
+
+(deftest with-clause
+  (testing "correct with-clause"
+    (let [query '[:find (sum ?amount) 
+                  :with ?e
+                  :where [?e :amount ?amount]]]
+      (is (= '{:Aggregate [[?amount] {:Project [[?amount ?e] {:MatchA [?e :amount ?amount]}]} ["SUM"] [] [?amount] [?e]]}
+             (compile-query query))))
+    (testing "Duplicated find- and with-symbols"
+      (let [query '[:find ?e (sum ?amount) 
+                    :with ?e
+                    :where [?e :amount ?amount]]]
+        (is (thrown? clojure.lang.ExceptionInfo (compile-query query)))))))

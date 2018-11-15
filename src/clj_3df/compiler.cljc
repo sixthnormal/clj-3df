@@ -42,11 +42,13 @@
 ;; GRAMMAR
 
 (s/def ::query (s/keys :req-un [::find ::where]
-                       :opt-un [::in]))
+                       :opt-un [::in ::with]))
 
 (s/def ::find (s/alt ::find-rel ::find-rel))
 (s/def ::find-rel (s/+ ::find-elem))
 (s/def ::find-elem (s/or :var ::variable :aggregate ::aggregate))
+
+(s/def ::with (s/+ ::variable))
 
 (s/def ::in (s/+ ::variable))
 
@@ -222,20 +224,24 @@
           {:Filter [args (encode-predicate predicate) :_ offset->const]}
           (throw (ex-info "All predicate inputs must be bound in a single relation." {:binding this})))))))
 
-(defrecord Aggregation [fn-symbols args key-symbols binding symbols]
+(defrecord Aggregation [fn-symbols args key-symbols binding symbols with]
   IBinding
   (bound-symbols [this] symbols)
   (plan [this]
-    (let [symbols (bound-symbols this)]
+    (let [symbols      (bound-symbols this)
+          with-symbols (or with [])]
       (if (binds-all? binding symbols)
-        {:Aggregate [symbols (plan binding) (map (comp str/upper-case name) fn-symbols) key-symbols args]}
+        {:Aggregate [symbols (plan binding) (map (comp str/upper-case name) fn-symbols) key-symbols args with-symbols]}
         (if debug?
-          {:Aggregate [args :_ (map (comp str/upper-case name) fn-symbols) symbols]}
+          {:Aggregate [args :_ (map (comp str/upper-case name) fn-symbols) symbols with-symbols]}
           (throw (ex-info "Aggregation on unbound symbols." {:binding (debug-plan this)})))))))
 
 (defrecord Projection [binding symbols]
   IBinding
-  (bound-symbols [this] symbols)
+  (bound-symbols [this]
+    (if (apply distinct? symbols)
+      symbols
+      (throw (ex-info "Duplicates in find- and with-clause!" {:symbols symbols}))))
   (plan [this]
     (let [symbols (bound-symbols this)]
       (cond
@@ -572,9 +578,9 @@
         find-syms   (extract-find-symbols (:find ir))
         key-syms    (extract-key-symbols (:find ir))
         unified     (->> (:where ir) (reduce normalize []) unify-context extract-binding)
-        projection  (->Projection unified (distinct find-syms))
+        projection  (->Projection unified (concat (distinct find-syms) (:with ir)))
         aggregation (if-let [agg-syms (-> (:find ir) extract-aggregations seq)]
-                      (->Aggregation (map :aggregation-fn agg-syms) (mapcat :vars agg-syms) key-syms  projection find-syms)
+                      (->Aggregation (map :aggregation-fn agg-syms) (mapcat :vars agg-syms) key-syms  projection find-syms (:with ir))
                       projection)]
     (plan aggregation)))
 
