@@ -238,7 +238,10 @@
 
 (defrecord Projection [binding symbols]
   IBinding
-  (bound-symbols [this] symbols)
+  (bound-symbols [this]
+    (if (apply distinct? symbols)
+      symbols
+      (throw (ex-info "Duplicates in find- and with-clause!" {:symbols symbols}))))
   (plan [this]
     (let [symbols (bound-symbols this)]
       (cond
@@ -575,7 +578,7 @@
         find-syms   (extract-find-symbols (:find ir))
         key-syms    (extract-key-symbols (:find ir))
         unified     (->> (:where ir) (reduce normalize []) unify-context extract-binding)
-        projection  (->Projection unified (distinct find-syms))
+        projection  (->Projection unified (concat (distinct find-syms) (:with ir)))
         aggregation (if-let [agg-syms (-> (:find ir) extract-aggregations seq)]
                       (->Aggregation (map :aggregation-fn agg-syms) (mapcat :vars agg-syms) key-syms  projection find-syms (:with ir))
                       projection)]
