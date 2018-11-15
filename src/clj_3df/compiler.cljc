@@ -42,11 +42,13 @@
 ;; GRAMMAR
 
 (s/def ::query (s/keys :req-un [::find ::where]
-                       :opt-un [::in]))
+                       :opt-un [::in ::with]))
 
 (s/def ::find (s/alt ::find-rel ::find-rel))
 (s/def ::find-rel (s/+ ::find-elem))
 (s/def ::find-elem (s/or :var ::variable :aggregate ::aggregate))
+
+(s/def ::with (s/+ ::variable))
 
 (s/def ::in (s/+ ::variable))
 
