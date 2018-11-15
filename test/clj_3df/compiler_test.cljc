@@ -467,7 +467,7 @@
   (testing "min"
     (let [query '[:find ?user (min ?age)
                   :where [?user :age ?age]]]
-      (is (= '{:Aggregate [[?user ?age] {:MatchA [?user :age ?age]} "MIN" [?user] [?age]]}
+      (is (= '{:Aggregate [[?user ?age] {:MatchA [?user :age ?age]} ["MIN"] [?user] [?age] []]}
              (compile-query query))))))
 
 (deftest test-functions
