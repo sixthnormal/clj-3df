@@ -90,7 +90,7 @@
 
 (s/def ::predicate '#{<= < > >= = not=})
 (s/def ::aggregation-fn '#{min max count median sum avg variance})
-(s/def ::function '#{truncate concat})
+(s/def ::function '#{truncate concat subtract add})
 (s/def ::fn-arg (s/or :var ::variable :const ::value))
 
 ;; PARSING
