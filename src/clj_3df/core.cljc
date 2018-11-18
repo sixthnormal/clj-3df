@@ -229,6 +229,38 @@
                    (>! out result)
                    (recur)))))))
 
+#?(:clj (defn- create-middleware
+          "subs to ws changes and pushes them to out. Applies f on ws changes."
+          [ws out f]
+          (Thread.
+           (fn []
+             (println "[MIDDLEWARE] running")
+             (loop []
+               (when-let [result @(stream/take! ws ::drained)]
+                 (if (= result ::drained)
+                   (do
+                     (println "[MIDDLEWARE] server closed connection")
+                     (async/close! out))
+                   (do
+                     (when (some? f) (f result))
+                     (>!! out result)
+                     (recur)))))))))
+
+#?(:cljs (defn- create-middleware
+          "subs to ws changes and pushes them to out. Applies f on ws changes."
+           [ws out f]
+           (js/console.log "[SUBSCRIBER] running")
+           (go-loop []
+             (when-let [result (<! (:source ws))]
+               (if (= result :drained)
+                 (do
+                   (println "[SUBSCRIBER] server closed connection")
+                   (async/close! out))
+                 (do
+                   (when (some? f) (f result))
+                   (>! out result)
+                   (recur)))))))
+
 #?(:clj (defn create-conn
           ([url] (create-conn url nil nil))
           ([url middleware] (create-conn url middleware nil))
@@ -323,7 +355,7 @@
      :loan/from    {:db/valueType :String}
      :loan/to      {:db/valueType :String}
      :loan/over-50 {:db/valueType :Bool}})
-  
+
   (def db (create-db schema))
 
   (exec! conn (create-db-inputs db))
@@ -336,7 +368,7 @@
       [?loan :loan/from ?from]
       [?loan :loan/to ?to]
       [?loan :loan/over-50 ?over-50]])
-  
+
   (exec! conn (query db "loans" loans))
 
   (exec! conn (transact db [[:db/add 1 :loan/amount 100] [:db/add 1 :loan/from "A"] [:db/add 1 :loan/to "B"] [:db/add 1 :loan/over-50 false]]))
@@ -346,7 +378,7 @@
     '[:find ?loan ?amount
       :where
       [?loan :loan/amount ?amount]])
-  
+
   (business-rule conn db "loans>50" loans>50
     (fn [diffs]
       (println "executing rule loans>50")
@@ -359,4 +391,3 @@
 
   (exec! conn (transact db [[:db/retract 1 :loan/amount 100]]))
   )
-

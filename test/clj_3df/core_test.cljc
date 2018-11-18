@@ -69,6 +69,7 @@
 (deftest test-basic-conjunction
   (let [name "basic-conjunction"
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (create-db-inputs db)
       (query db name '[:find ?e ?age :where [?e :name "Mabel"] [?e :age ?age]])
@@ -81,6 +82,7 @@
 (deftest test-multi-conjunction
   (let [name "multi-conjunction"
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (create-db-inputs db)
       (query db name '[:find ?e1 ?e2
@@ -97,6 +99,7 @@
 (deftest test-cartesian
   (let [name "cartesian"
         db   (df/create-db {:name {:db/valueType :String}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (create-db-inputs db)
       ;; (query db name '[:find ?e1 ?e2 :where [?e1 :name ?n1] [?e2 :name ?n2]])
@@ -115,6 +118,7 @@
 (deftest test-basic-disjunction
   (let [name "basic-disjunction"
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (create-db-inputs db)
       (query db name '[:find ?e :where (or [?e :name "Mabel"] [?e :name "Dipper"])])
@@ -128,6 +132,7 @@
 (deftest test-conjunction-and-disjunction
   (let [name "conjunction-and-disjunction"
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (create-db-inputs db)
       (query db name '[:find ?e
@@ -147,6 +152,7 @@
 (deftest test-simple-negation
   (let [name "simple-negation"
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (create-db-inputs db)
       (query db name '[:find ?e :where [?e :name "Mabel"] (not [?e :age 25])])
@@ -159,6 +165,7 @@
 (deftest test-min
   (let [name "min"
         db   (df/create-db {:age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (create-db-inputs db)
       (query db name '[:find (min ?age) :where [?user :age ?age]])
@@ -171,6 +178,7 @@
 (deftest test-max
   (let [name "max"
         db   (df/create-db {:age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (create-db-inputs db)
       (query db name '[:find (max ?age) :where [?user :age ?age]])
@@ -183,6 +191,7 @@
 (deftest test-count
   (let [name "count"
         db   (df/create-db {:age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (create-db-inputs db)
       (query db name '[:find (count ?user) :where [?user :age ?age]])
@@ -206,6 +215,7 @@
                                           (and [?parent :parent/child ?obj]
                                                (read? ?user ?parent)))]]
           conn  (debug-conn)]
+      (exec! conn (create-db-inputs db))
       (exec! conn
         (create-db-inputs db)
         (transact db [[:db/add 100 :read 901]
