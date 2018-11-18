@@ -165,7 +165,7 @@
                            [] tx-data)]
      [{:Transact {:tx tx :tx_data tx-data}}])))
 
-(defrecord Connection [ws out subscriber])
+(defrecord Connection [ws out middleware pub])
 
 (def xf-parse
   (map (fn [result]
@@ -175,54 +175,68 @@
            (let [[query_name results] (parse-json result)]
              [query_name (into [] xf-batch results)])))))
 
+#?(:clj (defn- create-middleware
+          "subs to ws changes and pushes them to out. Applies f on ws changes."
+          [ws out f]
+          (Thread.
+           (fn []
+             (println "[MIDDLEWARE] running")
+             (loop []
+               (when-let [result @(stream/take! ws ::drained)]
+                 (if (= result ::drained)
+                   (do
+                     (println "[MIDDLEWARE] server closed connection")
+                     (async/close! out))
+                   (do
+                     (when (some? f) (f result))
+                     (>!! out result)
+                     (recur)))))))))
+
+#?(:cljs (defn- create-middleware
+          "subs to ws changes and pushes them to out. Applies f on ws changes."
+           [ws out f]
+           (js/console.log "[SUBSCRIBER] running")
+           (go-loop []
+             (when-let [result (<! (:source ws))]
+               (if (= result :drained)
+                 (do
+                   (println "[SUBSCRIBER] server closed connection")
+                   (async/close! out))
+                 (do
+                   (when (some? f) (f result))
+                   (>! out result)
+                   (recur)))))))
+
 #?(:clj (defn create-conn
-          ([url]
-            (create-conn url nil))
-          ([url options]
-            (let [ws            @(http/websocket-client url)
-                  out           (:channel options (async/chan 100 xf-parse))
-                  subscriber    (Thread.
-                                 (fn []
-                                   (println "[SUBSCRIBER] running")
-                                   (loop []
-                                     (when-let [result @(stream/take! ws ::drained)]
-                                       (if (= result ::drained)
-                                         (do
-                                           (println "[SUBSCRIBER] server closed connection")
-                                           (async/close! out))
-                                         (do
-                                           (>!! out result)
-                                           (recur)))))))]
-              (.start subscriber)
-              (->Connection ws out subscriber)))))
+          ([url] (create-conn url nil nil))
+          ([url middleware] (create-conn url middleware nil))
+          ([url middleware options]
+           (let [ws  @(http/websocket-client url)
+                 out (:channel options (async/chan 100 xf-parse))
+                 mw  (create-middleware ws out middleware)]
+             (.start mw)
+             (->Connection ws out mw nil)))))
 
 #?(:cljs (defn create-conn
-           ([url]
-             (create-conn url nil))
-           ([url options]
-             (let [ws           (socket/connect url)
-                   out          (:channel options (async/chan 100 xf-parse))
-                   subscriber   (do
-                                  (js/console.log "[SUBSCRIBER] running")
-                                  (go-loop []
-                                    (when-let [result (<! (:source ws))]
-                                      (if (= result :drained)
-                                        (do
-                                           (println "[SUBSCRIBER] server closed connection")
-                                           (async/close! out))
-                                        (do
-                                          (>! out result)
-                                          (recur))))))]
-               (->Connection ws out subscriber)))))
+           ([url] (create-conn url nil nil))
+           ([url middleware] (create-conn url middleware nil))
+           ([url middleware options]
+            (let [ws  (socket/connect url)
+                  out (:channel options (async/chan 100 xf-parse))
+                  mw  (create-middleware ws out middleware)]
+              (->Connection ws out mw nil)))))
 
-(defn debug-conn [url]
-  (let [conn (create-conn url)
-        out  (:out conn)]
-    (go-loop []
-      (when-let [msg (<! out)]
-        (println msg)
-        (recur)))
-    conn))
+(defn create-debug-conn [url]
+  (create-conn url (fn [result] (println result))))
+
+(defn create-publication
+  ([url] (create-publication url nil))
+  ([url middleware]
+   (let [^Connection conn (create-conn url middleware)]
+     (assoc conn :pub (async/pub (:out conn) first)))))
+
+(defn create-debug-publication [url]
+  (create-publication url (fn [result] (println result))))
 
 (defn exec-raw! [conn requests]
   (->> requests
@@ -259,33 +273,67 @@
                                     'expect-> `(clojure.core/as-> (<!! ~out) ~@(rest form))
                                     `(clojure.core/->> ~form (clj-3df.core/stringify) (stream/put! (.-ws ~c))))))))))))
 
+(defn business-rule
+  "registers a query. Subscribes to its messages and calls callback with them."
+  [^Connection conn ^DB db name query callback]
+  (when (nil? (:pub conn)) (throw (ex-info "Business rule registered on non-pub connection" conn)))
+  (let [c (async/chan)
+        _ (async/sub (:pub conn) name c)]
+    (exec-raw! conn
+      (register-query db name query))
+    (go-loop []
+      (when-let [msg (<! c)]
+        (callback (second msg))
+        (recur)))))
+
 (comment
 
-  (def conn (create-conn  "ws://127.0.0.1:6262"))
+  (def conn (create-conn "ws://127.0.0.1:6262"))
+  (def conn (create-debug-conn "ws://127.0.0.1:6262"))
+  (def conn (create-conn "ws://127.0.0.1:6262" (fn [r] (println "ghetto mw"))))
+  (def conn (create-publication "ws://127.0.0.1:6262"))
+  (def conn (create-debug-publication "ws://127.0.0.1:6262"))
+  (def conn (create-publication "ws://127.0.0.1:6262" (fn [r] (println "pub mw" r))))
 
-  (def out-pub
-    (let [out      (:out conn)
-          topic-fn first]
-      (async/pub out topic-fn)))
+  (def schema
+    {:loan/amount  {:db/valueType :Number}
+     :loan/from    {:db/valueType :String}
+     :loan/to      {:db/valueType :String}
+     :loan/over-50 {:db/valueType :Bool}})
+  
+  (def db (create-db schema))
 
-  (defn listener [pub topic-name]
-    (let [c (async/chan)
-          _ (async/sub pub topic-name c)]
-      (go-loop []
-               (println (<! c))
-               (recur))))
+  (exec! conn (create-db-inputs db))
 
-  (def db (create-db {:name {:db/valueType :String} :age {:db/valueType :Number}}))
+  (def loans
+    "an overview of all loans in the system"
+    '[:find ?loan ?from ?amount ?to ?over-50
+      :where
+      [?loan :loan/amount ?amount]
+      [?loan :loan/from ?from]
+      [?loan :loan/to ?to]
+      [?loan :loan/over-50 ?over-50]])
+  
+  (exec! conn (register-query db "loans" loans))
 
-  (exec! conn (register-query db "basic-conjunction" '[:find ?e ?age :where [?e :name "Mabel"] [?e :age ?age]]))
+  (exec! conn (transact db [[:db/add 1 :loan/amount 100] [:db/add 1 :loan/from "A"] [:db/add 1 :loan/to "B"] [:db/add 1 :loan/over-50 false]]))
 
-  (exec! conn (transact db [[:db/add 1 :name "Dipper"] [:db/add 1 :age 30]]))
+  (def loans>50
+    "marks loans that are > 50"
+    '[:find ?loan ?amount
+      :where
+      [?loan :loan/amount ?amount]])
+  
+  (business-rule conn db "loans>50" loans>50
+    (fn [diffs]
+      (println "executing rule loans>50")
+      (doseq [[[id amount] op] diffs]
+        (when (pos? op)
+          (exec! conn (transact db [[:db/retract id :loan/over-50 false]]))
+          (exec! conn (transact db [[:db/add id :loan/over-50 (> amount 50)]]))))))
 
-  (exec! conn (transact db [{:db/id 2 :name "Mabel" :age 26}]))
+  (exec! conn (transact db [{:db/id 2 :loan/amount 200 :loan/from "B" :loan/to "A" :loan/over-50 false}]))
 
-  (exec! conn (transact db [[:db/retract 2 :name "Mabel"]]))
-
-  (exec! conn (register-query db "basic-disjunction" '[:find ?e :where (or [?e :name "Mabel"] [?e :name "Dipper"])]))
-
+  (exec! conn (transact db [[:db/retract 1 :loan/amount 100]]))
   )
 

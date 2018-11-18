@@ -4,13 +4,13 @@
       :cljs [cljs.test :refer-macros [deftest is testing run-tests]])
    #?(:clj  [clojure.core.async :as async :refer [<! >! go-loop]]
       :cljs [cljs.core.async :as async :refer [<! >!]])
-   [clj-3df.core :as df :refer [exec! create-conn register-query register-plan transact]])
+   [clj-3df.core :as df :refer [exec! create-db-inputs create-debug-conn register-query register-plan transact]])
   #?(:cljs (:require-macros [clj-3df.core :refer [exec!]]
                             [cljs.core.async :refer [go-loop]])))
 
 
 (defn- debug-conn []
-  (let [conn (create-conn "ws://127.0.0.1:6262")]
+  (let [conn (create-debug-conn "ws://127.0.0.1:6262")]
     conn))
 
 (comment
@@ -66,17 +66,19 @@
 (deftest test-basic-conjunction
   (let [name "basic-conjunction"
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (register-query db name '[:find ?e ?age :where [?e :name "Mabel"] [?e :age ?age]])
       (transact db [[:db/add 1 :name "Dipper"] [:db/add 1 :age 26]])
       (transact db [{:db/id 2 :name "Mabel" :age 26}])
-      (expect-> out (is (= [name [[[2 26] 1]]] out)))
+      (expect-> out (is (= [name [[[2 26] 1 1]]] out)))
       (transact db [[:db/retract 2 :name "Mabel"]])
-      (expect-> out (is (= [name [[[2 26] -1]]] out))))))
+      (expect-> out (is (= [name [[[2 26] -1 2]]] out))))))
 
 (deftest test-multi-conjunction
   (let [name "multi-conjunction"
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (register-query db name '[:find ?e1 ?e2
                                 :where
@@ -92,6 +94,7 @@
 (deftest test-cartesian
   (let [name "cartesian"
         db   (df/create-db {:name {:db/valueType :String}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       ;; (register-query db name '[:find ?e1 ?e2 :where [?e1 :name ?n1] [?e2 :name ?n2]])
       (register-plan db name '{:Project
@@ -108,6 +111,7 @@
 (deftest test-basic-disjunction
   (let [name "basic-disjunction"
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (register-query db name '[:find ?e :where (or [?e :name "Mabel"] [?e :name "Dipper"])])
       (transact db [[:db/add 1 :name "Dipper"] [:db/add 1 :age 26]])
@@ -120,6 +124,7 @@
 (deftest test-conjunction-and-disjunction
   (let [name "conjunction-and-disjunction"
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (register-query db name '[:find ?e
                                 :where
@@ -138,6 +143,7 @@
 (deftest test-simple-negation
   (let [name "simple-negation"
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (register-query db name '[:find ?e :where [?e :name "Mabel"] (not [?e :age 25])])
       (transact db [{:db/id 1 :name "Mabel" :age 25}])
@@ -149,6 +155,7 @@
 (deftest test-min
   (let [name "min"
         db   (df/create-db {:age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (register-query db name '[:find ?user (min ?age) :where [?user :age ?age]])
       (transact db [{:db/id 1 :age 12}
@@ -160,6 +167,7 @@
 (deftest test-max
   (let [name "max"
         db   (df/create-db {:age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (register-query db name '[:find ?user (max ?age) :where [?user :age ?age]])
       (transact db [{:db/id 1 :age 12}
@@ -171,6 +179,7 @@
 (deftest test-count
   (let [name "count"
         db   (df/create-db {:age {:db/valueType :Number}})]
+    (exec! (debug-conn) (create-db-inputs db))
     (exec! (debug-conn)
       (register-query db name '[:find (count ?user) :where [?user :age ?age]])
       (transact db [{:db/id 1 :age 12}
@@ -193,6 +202,7 @@
                                           (and [?parent :parent/child ?obj]
                                                (read? ?user ?parent)))]]
           conn  (debug-conn)]
+      (exec! conn (create-db-inputs db))
       (exec! conn
         (transact db [[:db/add 100 :read 901]
                       [:db/add 901 :parent/child 902]]))
