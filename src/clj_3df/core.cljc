@@ -170,7 +170,7 @@
 (def xf-parse
   (map (fn [result]
          (let [unwrap-type  (fn [boxed] (second (first boxed)))
-               unwrap-tuple (fn [[tuple diff]] [(mapv unwrap-type tuple) diff])
+               unwrap-tuple (fn [[tuple diff timestamp]] [(mapv unwrap-type tuple) diff timestamp])
                xf-batch     (map unwrap-tuple)]
            (let [[query_name results] (parse-json result)]
              [query_name (into [] xf-batch results)])))))
