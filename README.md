@@ -1,7 +1,7 @@
 # clj-3df
 
-**This is currently a research project, not feature-complete in any
-way, and overall not ready for use in production services.**
+**This is alpha-quality software, not feature-complete, and not yet
+ready for use in production services.**
 
 3DF is best thought of as a pub/sub system in which subscriptions can
 be arbitrary Datalog expressions. Subscribers register queries with
@@ -16,10 +16,8 @@ support the same set of features.
 3DF does this efficiently, thanks to being built on top of
 [differential
 dataflows](https://github.com/frankmcsherry/differential-dataflow). In
-particular, for any given transaction asserting / retracting n facts,
-3DF will at worst do work in `O(n * # of registered queries)`. Often
-it can be even less than that, because dataflows can be shared between
-similar queries.
+particular, Differential Dataflow will only compute changes, rather
+than execute a computation from scratch.
 
 This repository contains the Clojure client for 3DF. The broker is
 written in Rust and can be found in the [Declarative Differential
@@ -41,8 +39,8 @@ For example, consider a subscriber created the following subscription:
   (register-query db "user inbox" 
     '[:find ?msg ?content
       :where 
-	  [?msg :msg/recipient "me@nikolasgoebel.com"]
-	  [?msg :msg/content ?content]]))
+      [?msg :msg/recipient "me@nikolasgoebel.com"]
+      [?msg :msg/content ?content]]))
 ```
 
 and a new message arrives in the system.
@@ -78,14 +76,18 @@ derived information will always have a consistent view of the data.
 
 - [x] Implicit joins and unions, `and` / `or` operators
 - [x] Stratified negation
-- [ ] Parameterized queries
+- [x] Parameterized queries
 - [x] Rules, self-referential / mutually recursive rules
-- [x] Basic aggregates (min, max, count)
-- [ ] Grouping via `:with`
+- [x] Aggregation (min, max, count, etc...)
+- [x] Grouping via `:with`
 - [x] Basic predicates (<=, <, >, >=, =, not=)
 - [ ] As-of queries
 - [ ] More find specifications (e.g. collection, scalar)
 - [ ] Pull queries
+- [x] Queries across many heterogeneous data sources
+
+Please also have a look at the open issues to get a sense for what
+we're working on.
 
 ## Non-Features
 
