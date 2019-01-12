@@ -288,6 +288,7 @@
 
 (comment
 
+  ;; pick one, for business rules, pick a *-publication conn
   (def conn (create-conn "ws://127.0.0.1:6262"))
   (def conn (create-debug-conn "ws://127.0.0.1:6262"))
   (def conn (create-conn "ws://127.0.0.1:6262" (fn [r] (println "ghetto mw"))))
