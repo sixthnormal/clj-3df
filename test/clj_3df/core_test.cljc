@@ -23,6 +23,9 @@
                          :update       {:db/valueType :Eid}
                          :delete       {:db/valueType :Eid}}))
 
+  (exec! conn
+    (df/create-db-inputs db))
+
   (def rules
     '[[(read? ?user ?obj) (or [?user :read ?obj]
                               (and [?parent :parent/child ?obj]
@@ -73,7 +76,7 @@
       (transact db [{:db/id 2 :name "Mabel" :age 26}])
       (expect-> out (is (= [name [[[2 26] 1 1]]] out)))
       (transact db [[:db/retract 2 :name "Mabel"]])
-      (expect-> out (is (= [name [[[2 26] -1 2]]] out))))))
+      (expect-> out (is (= [name [[[2 26] 2 -1]]] out))))))
 
 (deftest test-multi-conjunction
   (let [name "multi-conjunction"
@@ -87,9 +90,9 @@
       (transact db [{:db/id 1 :name "Dipper" :age 26}
                     {:db/id 2 :name "Mabel" :age 26}
                     {:db/id 3 :name "Soos" :age 32}])
-      (expect-> out (is (= [name [[[1 1] 1 0] [[2 2] 1 0] [[3 3] 1 0]]] out)))
+      (expect-> out (is (= [name [[[1 1] 0 1] [[2 2] 0 1] [[3 3] 0 1]]] out)))
       (transact db [[:db/retract 2 :name "Mabel"]])
-      (expect-> out (is (= [name [[[2 2] -1 1]]] out))))))
+      (expect-> out (is (= [name [[[2 2] 1 -1]]] out))))))
 
 (deftest test-cartesian
   (let [name "cartesian"
@@ -104,9 +107,9 @@
                                         {:MatchA [?e2 :name ?n2]}]}]} [])
       (transact db [[:db/add 1 :name "Dipper"]
                     [:db/add 2 :name "Mabel"]])
-      (expect-> out (is (= [name [[[1 1] 1 0] [[1 2] 1 0] [[2 1] 1 0] [[2 2] 1 0]]] out)))
+      (expect-> out (is (= [name [[[1 1] 0 1] [[1 2] 0 1] [[2 1] 0 1] [[2 2] 0 1]]] out)))
       (transact db [[:db/retract 2 :name "Mabel"]])
-      (expect-> out (is (= [name [[[1 2] -1 1] [[2 1] -1 1] [[2 2] -1 1]]] out))))))
+      (expect-> out (is (= [name [[[1 2] 1 -1] [[2 1] 1 -1] [[2 2] 1 -1]]] out))))))
 
 (deftest test-basic-disjunction
   (let [name "basic-disjunction"
@@ -115,11 +118,11 @@
       (create-db-inputs db)
       (register-query db name '[:find ?e :where (or [?e :name "Mabel"] [?e :name "Dipper"])])
       (transact db [[:db/add 1 :name "Dipper"] [:db/add 1 :age 26]])
-      (expect-> out (is (= [name [[[1] 1 0]]] out)))
+      (expect-> out (is (= [name [[[1] 0 1]]] out)))
       (transact db [{:db/id 2 :name "Mabel" :age 26}])
       (expect-> out (is (= [name [[[2] 1 1]]] out)))
       (transact db [[:db/retract 2 :name "Mabel"]])
-      (expect-> out (is (= [name [[[2] -1 2]]] out))))))
+      (expect-> out (is (= [name [[[2] 2 -1]]] out))))))
 
 (deftest test-conjunction-and-disjunction
   (let [name "conjunction-and-disjunction"
@@ -135,10 +138,10 @@
                     {:db/id 2 :name "Mabel" :age 14}
                     {:db/id 3 :name "Mabel" :age 12}
                     {:db/id 4 :name "Mabel" :age 18}])
-      (expect-> out (is (= [name [[[2] 1 0] [[3] 1 0]]] out)))
+      (expect-> out (is (= [name [[[2] 0 1] [[3] 0 1]]] out)))
       (transact db [[:db/retract 2 :name "Mabel"]
                     [:db/retract 3 :age 12]])
-      (expect-> out (is (= [name [[[2] -1 1] [[3] -1 1]]] out))))))
+      (expect-> out (is (= [name [[[2] 1 -1] [[3] 1 -1]]] out))))))
 
 (deftest test-simple-negation
   (let [name "simple-negation"
@@ -150,7 +153,7 @@
       (transact db [{:db/id 2 :name "Mabel" :age 42}])
       (expect-> out (is (= [name [[[2] 1 1]]] out)))
       (transact db [[:db/add 2 :age 25]])
-      (expect-> out (is (= [name [[[2] -1 2]]] out))))))
+      (expect-> out (is (= [name [[[2] 2 -1]]] out))))))
 
 ;; currently fails
 (deftest test-min
@@ -161,9 +164,9 @@
       (register-query db name '[:find ?user (min ?age) :where [?user :age ?age]])
       (transact db [{:db/id 1 :age 12}
                     {:db/id 2 :age 25}])
-      (expect-> out (is (= [name [[[1 12] 1 0]]] out)))
+      (expect-> out (is (= [name [[[1 12] 0 1]]] out)))
       (transact db [[:db/add 3 :age 5]])
-      (expect-> out (is (= [name [[[3 5] 1 1] [[1 12] -1 1]]] out))))))
+      (expect-> out (is (= [name [[[3 5] 1 1] [[1 12] 1 -1]]] out))))))
 
 ;; currently fails
 (deftest test-max
@@ -174,9 +177,9 @@
       (register-query db name '[:find ?user (max ?age) :where [?user :age ?age]])
       (transact db [{:db/id 1 :age 12}
                     {:db/id 2 :age 25}])
-      (expect-> out (is (= [name [[[2 25] 1 0]]] out)))
+      (expect-> out (is (= [name [[[2 25] 0 1]]] out)))
       (transact db [[:db/add 3 :age 35]])
-      (expect-> out (is (= [name [[[3 35] 1 1] [[2 25] -1 1]]] out))))))
+      (expect-> out (is (= [name [[[3 35] 1 1] [[2 25] 1 -1]]] out))))))
 
 (deftest test-count
   (let [name "count"
@@ -186,11 +189,11 @@
       (register-query db name '[:find (count ?user) :where [?user :age ?age]])
       (transact db [{:db/id 1 :age 12}
                     {:db/id 2 :age 25}])
-      (expect-> out (is (= [name [[[2] 1 0]]] out)))
+      (expect-> out (is (= [name [[[2] 0 1]]] out)))
       (transact db [[:db/add 3 :age 5]])
-      (expect-> out (is (= [name [[[2] -1 1] [[3] 1 1]]] out)))
+      (expect-> out (is (= [name [[[2] 1 -1] [[3] 1 1]]] out)))
       (transact db [[:db/retract 3 :age 5]])
-      (expect-> out (is (= [name [[[2] 1 2] [[3] -1 2]]] out))))))
+      (expect-> out (is (= [name [[[2] 2 1] [[3] 2 -1]]] out))))))
 
 (deftest test-registration
   (testing "queries should produce results for previously transacted data"
@@ -212,4 +215,4 @@
       (exec! conn
         (register-query db name '[:find ?user ?obj
                                   :where (read? ?user ?obj)] rules)
-        (expect-> out (is (= [name [[[100 901] 1 0] [[100 902] 1 0]]] out)))))))
+        (expect-> out (is (= [name [[[100 901] 0 1] [[100 902] 0 1]]] out)))))))
