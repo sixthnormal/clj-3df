@@ -155,31 +155,29 @@
       (transact db [[:db/add 2 :age 25]])
       (expect-> out (is (= [name [[[2] 2 -1]]] out))))))
 
-;; currently fails
 (deftest test-min
   (let [name "min"
         db   (df/create-db {:age {:db/valueType :Number}})]
     (exec! (debug-conn)
       (create-db-inputs db)
-      (register-query db name '[:find ?user (min ?age) :where [?user :age ?age]])
+      (register-query db name '[:find (min ?age) :where [?user :age ?age]])
       (transact db [{:db/id 1 :age 12}
                     {:db/id 2 :age 25}])
-      (expect-> out (is (= [name [[[1 12] 0 1]]] out)))
+      (expect-> out (is (= [name [[[12] 0 1]]] out)))
       (transact db [[:db/add 3 :age 5]])
-      (expect-> out (is (= [name [[[3 5] 1 1] [[1 12] 1 -1]]] out))))))
+      (expect-> out (is (= [name [[[5] 1 1] [[12] 1 -1]]] out))))))
 
-;; currently fails
 (deftest test-max
   (let [name "max"
         db   (df/create-db {:age {:db/valueType :Number}})]
     (exec! (debug-conn)
       (create-db-inputs db)
-      (register-query db name '[:find ?user (max ?age) :where [?user :age ?age]])
+      (register-query db name '[:find (max ?age) :where [?user :age ?age]])
       (transact db [{:db/id 1 :age 12}
                     {:db/id 2 :age 25}])
-      (expect-> out (is (= [name [[[2 25] 0 1]]] out)))
+      (expect-> out (is (= [name [[[25] 0 1]]] out)))
       (transact db [[:db/add 3 :age 35]])
-      (expect-> out (is (= [name [[[3 35] 1 1] [[2 25] 1 -1]]] out))))))
+      (expect-> out (is (= [name [[[35] 1 1] [[25] 1 -1]]] out))))))
 
 (deftest test-count
   (let [name "count"
