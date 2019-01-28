@@ -340,13 +340,13 @@
         (callback (second msg))
         (recur)))))
 
-(defn register-graph-ql
+(defn register-graph-ql-and-interest
   [^Connection conn ^DB db name query]
-  (let [req (concat
-             [{:Register {:publish [name]
-                          :rules   [{:name name
-                                     :plan {:GraphQl {:query query}}}]}}]
-             (interest name))]
+  (let [req (concat [{:GraphQl [name query]}] (interest name))]
+    (exec-raw! conn req)))
+
+(defn register-graph-ql-plain [^Connection conn ^DB db name query]
+  (let [req [{:GraphQl [name query]}]]
     (exec-raw! conn req)))
 
 (comment
@@ -359,7 +359,8 @@
      :loanId     {:db/valueType :String}
      :loanFrom   {:db/valueType :Eid}
      :loanTo     {:db/valueType :Eid}
-     :loanAmount {:db/valueType :Number}})
+     :loanAmount {:db/valueType :Number}
+     :loanObservers {:db/valueType :Eid}})
 
   (def db (create-db schema))
 
@@ -370,33 +371,39 @@
      {:db/id      2
       :personId   "B"
       :personName "Berta"}
+     {:db/id      5
+      :personId   "C"
+      :personName "Charles"}
      {:db/id      3
       :loanId     "L1"
       :loanFrom   1
       :loanTo     2
-      :loanAmount 100}
+      :loanAmount 100
+      :loanObservers 1}
+     {:db/id      3
+      :loanObservers 2}
+     {:db/id      3
+      :loanObservers 5}
      {:db/id      4
       :loanId     "L2"
       :loanFrom   2
       :loanTo     1
       :loanAmount 200}])
 
-  (def overview "{ loans { loanFrom { personName } loanTo { personName } loanAmount } }")
+  (def overview "{ loans { loanFrom { personName } loanTo { personName } loanObservers loanAmount } }")
 
   (do
     (def conn (create-debug-publication "ws://127.0.0.1:6262"))
     (exec-raw! conn (create-db-inputs db)))
 
-  (do
-    (exec! conn (register-query db "persons" '[:find ?person :where [?person :personId ?id]]))
-    (exec! conn (register-query db "loans" '[:find ?loan :where [?loan :loanId ?id]])))
-  
-  (register-graph-ql conn db "AnOverview" overview)
+  (exec! conn (register-query db "loans" '[:find ?loan :where [?l oan :loanId ?i d]]))
+
+  (register-graph-ql-plain conn db "AnOverview" overview)
+
   (exec! conn (transact db initial-data))
 
   (exec! conn (transact db [[:db/add 8 :personId "C"] [:db/add 8 :personName "Charles"]]))
   (exec! conn (transact db [[:db/retract 8 :personId "C"] [:db/retract 8 :personName "Charles"]])))
-
 
 (comment
 
