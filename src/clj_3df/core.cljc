@@ -106,7 +106,7 @@
      :source source}}])
 
 (defn create-input [attr]
-  [{:CreateInput {:name (encode/encode-keyword attr)}}])
+  [{:CreateAttribute {:name (encode/encode-keyword attr)}}])
 
 (defn create-db-inputs [^DB db]
   (mapcat create-input (keys (.-schema db))))
