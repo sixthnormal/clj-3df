@@ -196,17 +196,13 @@
       ::hasattr (let [[sym-e a sym-v] pattern] {:MatchA [sym-e a sym-v]})
       ::filter  (let [[sym-e a [_ v]] pattern] {:MatchAV [sym-e a (encode-value v)]}))))
 
-(defrecord RuleExpr [rule-name symbols]
+(defrecord NameExpr [rule-name symbols]
+  ;; RuleExpr and NameExpr are equivalent
   IBinding
   (bound-symbols [this] symbols)
   (plan [this]
     (let [name (str rule-name)]
-      ;; @TODO
-      ;; For now this is how we check whether a rule is globally
-      ;; registered. Should probably be more explicit eventually.
-      (if (str/includes? name "/")
-        {:NameExpr [(bound-symbols this) name]}
-        {:RuleExpr [(bound-symbols this) name]}))))
+      {:NameExpr [(bound-symbols this) name]})))
 
 ;; Predicate epxressions, aggregations, and projections act on
 ;; existing bindings.
@@ -326,7 +322,7 @@
     (when (seq offset->const)
       (throw (ex-info "Constants in rule-expr are not supported yet" {})))
     (-> ctx
-        (conj (->RuleExpr rule-name normalized-args)))))
+        (conj (->NameExpr rule-name normalized-args)))))
 
 (defmethod normalize ::fn-expr [ctx [_ fn-expr]]
   (let [[{:keys [fn fn-args]} result-sym] fn-expr
@@ -441,7 +437,7 @@
 
 (derive Input ::binding)
 (derive Relation ::binding)
-(derive RuleExpr ::binding)
+(derive NameExpr ::binding)
 (derive Predicate ::binding)
 (derive FnExpr ::binding)
 (derive Join ::binding)
