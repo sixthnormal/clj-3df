@@ -1,4 +1,4 @@
-(ns conj.device
+(ns device
   (:require
    [clj-3df.core :as df :use [exec!]]))
 
