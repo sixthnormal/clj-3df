@@ -228,7 +228,7 @@
                        (recur ?z ?y)))]]
     (is (= '{:Union [[?x ?y]
                      [{:MatchA [?x :edge ?y]}
-                      {:Join [[?z] {:MatchA [?x :edge ?z]} {:RuleExpr [[?z ?y] "recur"]}]}]]}
+                      {:Join [[?z] {:MatchA [?x :edge ?z]} {:NameExpr [[?z ?y] "recur"]}]}]]}
            (compile-query query)))))
 
 ;; @TODO turn into integration test
@@ -241,7 +241,7 @@
                        (recur ?x ?z)))]]
     (is (= '{:Union [[?x ?y]
                      [{:MatchA [?x :node ?y]}
-                      {:Join [[?z] {:MatchA [?z :edge ?y]} {:RuleExpr [[?x ?z] "recur"]}]}]]}
+                      {:Join [[?z] {:MatchA [?z :edge ?y]} {:NameExpr [[?x ?z] "recur"]}]}]]}
            (compile-query query)))))
 
 (deftest test-rules
@@ -258,7 +258,7 @@
                         [[?x ?y]
                          [{:MatchA [?x :node ?y]}
                           {:Join [[?z]
-                                  {:MatchA [?z :edge ?y]} {:RuleExpr [[?x ?z] "propagate"]}]}]]}}}
+                                  {:MatchA [?z :edge ?y]} {:NameExpr [[?x ?z] "propagate"]}]}]]}}}
              (set (compile-rules rules))))))
 
   (testing "rules can be split across many bodies"
@@ -275,7 +275,7 @@
                          {:Join [[2] {:MatchA [1 100 2]} {:MatchA [0 100 2]}]}
                          {:MatchA [1 700 0]}
                          {:Join
-                          [[3] {:MatchA [1 700 3]} {:RuleExpr [[3 0] "subtype"]}]}]]}}}
+                          [[3] {:MatchA [1 700 3]} {:NameExpr [[3 0] "subtype"]}]}]]}}}
              (set (compile-rules rules)))))))
 
 (deftest test-predicates
@@ -460,7 +460,7 @@
                              {:MatchA [?op :assign/time ?t]}
                              {:MatchA [?op :assign/key ?key]}]}
                            {:MatchA [?op :assign/value ?val]}]}
-                         {:RuleExpr [[?t ?key] "older?"]}]}]}}}
+                         {:NameExpr [[?t ?key] "older?"]}]}]}}}
            (set (compile-rules rules))))))
 
 (deftest test-aggregations
@@ -506,10 +506,10 @@
       (is (= '{:NameExpr [[?x ?y] "org.example/global-rule"]}
              (compile-query query)))))
 
-  (testing "local rules stay RuleExpr"
+  (testing "local rules stay NameExpr"
     (let [query '[:find ?x ?y
                   :where (local-rule ?x ?y)]]
-      (is (= '{:RuleExpr [[?x ?y] "local-rule"]}
+      (is (= '{:NameExpr [[?x ?y] "local-rule"]}
              (compile-query query))))))
 
 (deftest with-clause
