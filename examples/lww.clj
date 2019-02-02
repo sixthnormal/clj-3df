@@ -2,9 +2,7 @@
   (:require
    [clojure.pprint :as pprint]
    [clj-3df.core :refer [create-conn create-db exec!
-                         register-plan register-query transact]]
-   [manifold.stream :as stream]
-   [manifold.bus :as bus])
+                         register-plan register-query transact] :as df])
   (:gen-class))
 
 ;; LWW Register
@@ -48,14 +46,15 @@
 ;; test
 
 (defn -main []
-  (def conn (create-conn "ws://127.0.0.1:6262"))
-  (stream/consume #(pprint/pprint %) (bus/subscribe (:out conn) :out))
+  (def conn (df/create-debug-conn "ws://127.0.0.1:6262"))
+
+  (exec! conn (df/create-db-inputs db))
 
   (exec! conn (register-query db "lww_crdt" q rules))
 
   (exec! conn
     (transact db [{:db/id 1 :assign/time 4 :assign/key 100 :assign/value "X"}])
-    (expect-> out (assert (= [[[4 100 "X"] 1]] out))))
+    (expect-> out (assert (= ["lww_crdt" [[[4 100 "X"] 0 1]]] out))))
 
   (exec! conn
     (transact db [{:db/id 2 :assign/time 2 :assign/key 100 :assign/value "Y"}]))
@@ -63,9 +62,10 @@
   (exec! conn
     (transact db [{:db/id 4 :assign/time 10 :assign/key 100 :assign/value "Z"}
                   {:db/id 5 :assign/time 10 :assign/key 200 :assign/value "Z"}])
-    (expect-> out (assert (= [[[4 100 "X"] -1]
-                              [[10 100 "Z"] 1]
-                              [[10 200 "Z"] 1]] out))))
+    (expect-> out (assert (= ["lww_crdt"
+                              [[[4 100 "X"] 2 -1]
+                               [[10 100 "Z"] 2 1]
+                               [[10 200 "Z"] 2 1]]] out))))
 
   (exec! conn
     (transact db [{:db/id 3 :assign/time 6 :assign/key 200 :assign/value "Y"}])
