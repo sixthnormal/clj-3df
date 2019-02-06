@@ -105,14 +105,17 @@
     {:names  (mapv encode/encode-keyword names)
      :source source}}])
 
-(defn create-input [attr]
+(defn create-attribute [attr]
   [{:CreateAttribute {:name (encode/encode-keyword attr)}}])
 
 (defn create-db-inputs [^DB db]
-  (mapcat create-input (keys (.-schema db))))
+  (mapcat create-attribute (keys (.-schema db))))
+
+(defn advance-domain [next-t]
+  [{:AdvanceDomain [nil next-t]}])
 
 (defn close-input [attr]
-  [{:CloseInput {:name (encode/encode-keyword attr)}}])
+  [{:CloseInput (encode/encode-keyword attr)}])
 
 (defn- reverse-ref [attr]
   (if (reverse-ref? attr)
@@ -156,14 +159,13 @@
                                     (transact db tx)
                                     first
                                     :Transact
-                                    :tx_data
                                     (into tx-data))
 
                                (sequential? datum)
                                (let [[op e a v] datum]
                                  (conj tx-data [(op->diff op) e (encode/encode-keyword a) (wrap-type a v)]))))
                            [] tx-data)]
-     [{:Transact {:tx tx :tx_data tx-data}}])))
+     [{:Transact tx-data}])))
 
 (defrecord Connection [ws out middleware pub])
 

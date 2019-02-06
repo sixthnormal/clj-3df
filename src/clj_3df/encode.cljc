@@ -17,8 +17,8 @@
     (keyword? plan)     (encode-keyword plan)
     (sequential? plan)  (mapv encode-plan plan)
     (associative? plan) (reduce-kv (fn [m k v] (assoc m k (encode-plan v))) {} plan)
-    (nil? plan)         (throw (ex-info "Plan contain's nils."
-                                        {:causes #{:contains-nil}}))
+    ;; (nil? plan)         (throw (ex-info "Plan contain's nils."
+    ;;                                     {:causes #{:contains-nil}}))
     :else               plan))
 
 (defn encode-rule [rule]

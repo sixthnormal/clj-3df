@@ -18,10 +18,10 @@
 
 (def db (df/create-db schema))
 
-;; Rules
 (def rules
-    ;; A shipment is completed if its current position is its destination
-  '[[(completed? ?id)
+  '[;; A shipment is completed if its current position is its
+    ;; destination
+    [(completed? ?id)
      [?id :shipment/dest ?dest]
      [?id :shipment/pos ?pos]
      [(= ?dest ?pos)]]
@@ -38,7 +38,8 @@
          (and [?t :conn/from ?b]
               [?t :conn/to ?a]))]
 
-    ;; Two nodes in a graph are connected if they share an edge or an intermediate edge connects them
+    ;; Two nodes in a graph are connected if they share an edge or an
+    ;; intermediate edge connects them
     [(connected? ?from ?to)
      (edge ?from ?to)]
 
@@ -46,7 +47,8 @@
      (edge ?from ?middleman)
      (connected? ?middleman ?to)]
 
-    ;; An error exists if the destination of a shipment is not reachable
+    ;; An error exists if the destination of a shipment is not
+    ;; reachable
     [(error ?shipment)
      [?shipment :shipment/dest ?dest]
      [?shipment :shipment/pos ?pos]
@@ -59,14 +61,14 @@
 
     (exec! conn
       ;; 'manual' inputs
-      (df/create-input :shipment/payload)
-      (df/create-input :shipment/value)
-      (df/create-input :shipment/dest)
-      (df/create-input :shipment/pos)
-      (df/create-input :port/id)
-      (df/create-input :conn/from)
-      (df/create-input :conn/to)
-      (df/create-input :control/ports))
+      (df/create-attribute :shipment/payload)
+      (df/create-attribute :shipment/value)
+      (df/create-attribute :shipment/dest)
+      (df/create-attribute :shipment/pos)
+      (df/create-attribute :port/id)
+      (df/create-attribute :conn/from)
+      (df/create-attribute :conn/to)
+      (df/create-attribute :control/ports))
 
     (exec! conn
       (df/register-query db "logistics/finished"
@@ -84,15 +86,15 @@
       (df/register-query db "logistics/errors"
                          '[:find ?shipment
                            :where
-                           (error ?shipment)] rules)))
+                           (error ?shipment)] rules))
+    )
 
-  (do
-    (exec! conn
-      (df/register-query db "logistics/error-cost"
-                         '[:find (sum ?value)
-                           :where
-                           (logistics/errors ?shipment )
-                           [?shipment :shipment/value ?value]] rules)))
+  (exec! conn
+    (df/register-query db "logistics/error-cost"
+                       '[:find (sum ?value)
+                         :where
+                         (logistics/errors ?shipment )
+                         [?shipment :shipment/value ?value]] rules))
 
   ;; Ports and connections
   (do                                                            ;;      +-+
@@ -115,27 +117,35 @@
                        {:db/id 15 :conn/from 7 :conn/to 8}])))   ;;           |8|
                                                                  ;;           +-+
   
-  ;; Some shipments
-  (do
-    (exec! conn
-      (df/transact db [{:db/id 100 :shipment/payload "Chocolate" :shipment/value 500 :shipment/dest 4 :shipment/pos 1}
-                       {:db/id 101 :shipment/payload "Wisdome" :shipment/value 1250 :shipment/dest 8 :shipment/pos 6}])))
+  ;; Some initial shipments.
+  
+  (exec! conn
+    (df/transact db [{:db/id            100
+                      :shipment/payload "Chocolate"
+                      :shipment/value   500
+                      :shipment/dest    4
+                      :shipment/pos     1}
+                     {:db/id            101
+                      :shipment/payload "Wisdome"
+                      :shipment/value   1250
+                      :shipment/dest    8
+                      :shipment/pos     6}]))
 
-  ;; Some time passes and the "Chocolate" shipment reaches its destination
-  (do
-    (exec! conn
-      (df/transact db [{:db/id 100 :shipment/pos 4}])))
+  ;; Some time passes and the "Chocolate" shipment reaches its
+  ;; destination.
+  
+  (exec! conn
+    (df/transact db [{:db/id 100 :shipment/pos 4}]))
 
-  ;; One edge in the port graph is deleted,
-  ;; which leads to an error in the "Wisdome" shipment
-  (do
-    (exec! conn
-      (df/transact db [[:db/retract 14 :conn/from 5]
-                       [:db/retract 14 :conn/to 7]])))
+  ;; One edge in the port graph is deleted, which leads to an error in
+  ;; the "Wisdome" shipment.
+  
+  (exec! conn
+    (df/transact db [[:db/retract 14 :conn/from 5]
+                     [:db/retract 14 :conn/to 7]]))
 
-  ;; USER PARAMETER
   ;; We are interested to monitor what shipements are at given ports
-  ;; Via the `:control/ports` handle we specify the ports of interest
+  ;; Via the `:control/ports` handle we specify the ports of interest.
 
   (exec! conn
     (df/transact db [{:db/id 999 :control/ports 6}]))
@@ -149,4 +159,6 @@
                          [?e :shipment/payload ?s]]))
 
   (exec! conn
-    (df/transact db [[:db/retract 999 :control/ports 6]])))
+    (df/transact db [[:db/retract 999 :control/ports 6]]))
+
+  )

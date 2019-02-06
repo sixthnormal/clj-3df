@@ -8,6 +8,9 @@
   (:gen-class))
 
 ;; RGA
+;; Datalog version of an ordered list CRDT, translated from Martin
+;; Kleppman's work:
+;;
 ;; https://speakerdeck.com/ept/data-structures-as-queries-expressing-crdts-using-datalog?slide=22
 
 (def schema

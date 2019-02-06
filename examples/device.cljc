@@ -2,6 +2,10 @@
   (:require
    [clj-3df.core :as df :use [exec!]]))
 
+;; We are modeling devices that are reporting their current speed via
+;; some sensors. The speed is supposed to match the settings for that
+;; device. We are interested in reporting any devices that are
+;; deviating from their settings.
 
 (def schema
   {:settings/speed {:db/valueType :Number}
@@ -9,20 +13,14 @@
 
 (def db (df/create-db schema))
 
-
-
 (comment
 
   (do
     (def conn (df/create-debug-conn "ws://127.0.0.1:6262"))
     (exec! conn (df/create-db-inputs db)))
 
-  (def t0 0)
-  (def t1 1)
-  (def t2 2)
-
   (exec! conn
-    (df/transact db t0 [[:db/add 111 :settings/speed 100]]))
+    (df/transact db [[:db/add 111 :settings/speed 100]]))
 
   (exec! conn
     (df/register-query
@@ -46,20 +44,11 @@
        [(< ?speed ?target)]
        [(subtract ?target ?speed) ?deviation]]))
 
-  ;; send inputs without closing t1 epoch yet
-  
-  (exec-raw!
-   conn
-   [{:Datom [111 :device/speed {:Number 50} 1 t1]}])
+  (exec! conn
+    (df/transact db [[:db/add 111 :device/speed 50]]))
 
-  ;; still not done with t1...
-  
-  (exec-raw!
-   conn
-   [{:Datom [111 :device/speed {:Number 50} -1 t1]}
-    {:Datom [111 :device/speed {:Number 75} 1 t1]}])
+  (exec! conn
+    (df/transact db [[:db/retract 111 :device/speed 50]
+                     [:db/add 111 :device/speed 75]]))
 
-  ;; nothing in flight, advance to t2...
-  
-  (exec-raw! conn [{:AdvanceInput [nil t2]}])
   )

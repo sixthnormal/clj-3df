@@ -6,6 +6,9 @@
   (:gen-class))
 
 ;; LWW Register
+;; Datalog version of a last-write-wins register,
+;; translated from Martin Kleppman's work:
+;;
 ;; https://speakerdeck.com/ept/data-structures-as-queries-expressing-crdts-using-datalog?slide=15
 
 (def schema
@@ -54,7 +57,7 @@
 
   (exec! conn
     (transact db [{:db/id 1 :assign/time 4 :assign/key 100 :assign/value "X"}])
-    (expect-> out (assert (= ["lww_crdt" [[[4 100 "X"] 0 1]]] out))))
+    #_(expect-> out (assert (= ["lww_crdt" [[[4 100 "X"] 0 1]]] out))))
 
   (exec! conn
     (transact db [{:db/id 2 :assign/time 2 :assign/key 100 :assign/value "Y"}]))
@@ -62,12 +65,13 @@
   (exec! conn
     (transact db [{:db/id 4 :assign/time 10 :assign/key 100 :assign/value "Z"}
                   {:db/id 5 :assign/time 10 :assign/key 200 :assign/value "Z"}])
-    (expect-> out (assert (= ["lww_crdt"
+    #_(expect-> out (assert (= ["lww_crdt"
                               [[[4 100 "X"] 2 -1]
                                [[10 100 "Z"] 2 1]
                                [[10 200 "Z"] 2 1]]] out))))
 
   (exec! conn
     (transact db [{:db/id 3 :assign/time 6 :assign/key 200 :assign/value "Y"}])
+    (transact db [{:db/id 3 :assign/time 1 :assign/key 200 :assign/value "Y"}]))
 
-    (transact db [{:db/id 3 :assign/time 1 :assign/key 200 :assign/value "Y"}])))
+  )

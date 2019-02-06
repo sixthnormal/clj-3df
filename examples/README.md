@@ -24,20 +24,3 @@ data (the RGA example is provided as data at
 ``` shell
 clj -m runner <filename>
 ```
-
-Instructions specific to each experiment are given below.
-
-## LWW
-
-The LWW example (`clj -m lww`) models a Last Write Wins Register, a
-very simple CRDT. It is adapted from Martin Kleppman's work here:
-https://speakerdeck.com/ept/data-structures-as-queries-expressing-crdts-using-datalog?slide=15.
-
-## RGA
-
-The RGA example (`clj -m rga`) is a CRDT version of an ordered list,
-again taken from Martin's work here:
-https://speakerdeck.com/ept/data-structures-as-queries-expressing-crdts-using-datalog?slide=22.
-
-Running this example requires a 3DF server built on the `crdt` branch,
-which models entity id's as Lamport timestamps, rather than integers.

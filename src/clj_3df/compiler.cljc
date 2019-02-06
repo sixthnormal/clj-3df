@@ -36,7 +36,7 @@
   (cond
     (string? v)  {:String v}
     (number? v)  {:Number v}
-    (keyword? v) {:String (str v)}
+    (keyword? v) {:Aid (subs (str v) 1)}
     (boolean? v) {:Bool v}))
 
 ;; GRAMMAR
@@ -207,6 +207,9 @@
 ;; Predicate epxressions, aggregations, and projections act on
 ;; existing bindings.
 
+(defn- offset-map->vec [arity offset->const]
+  (->> (range 0 arity) (map offset->const) (into [])))
+
 (defrecord Predicate [predicate args binding offset->const]
   IBinding
   (bound-symbols [this]
@@ -215,7 +218,7 @@
     (let [encode-predicate {'< "LT" '<= "LTE" '> "GT" '>= "GTE" '= "EQ" 'not= "NEQ"}
           symbols          (bound-symbols this)]
       (if (some? binding)
-        {:Filter [args (encode-predicate predicate) (plan binding) offset->const]}
+        {:Filter [args (encode-predicate predicate) (plan binding) (offset-map->vec 2 offset->const)]}
         (if debug?
           {:Filter [args (encode-predicate predicate) :_ offset->const]}
           (throw (ex-info "All predicate inputs must be bound in a single relation." {:binding this})))))))
@@ -256,7 +259,7 @@
   (plan [this]
     (let [encode-fn (comp str/upper-case name)]
       (if (some? binding)
-        {:Transform [args result-sym (plan binding) (encode-fn fn) offset->const]}
+        {:Transform [args result-sym (plan binding) (encode-fn fn) (offset-map->vec 2 offset->const)]}
         (if debug?
           {:Transform [args result-sym (encode-fn fn) :_ offset->const]}
           (throw (ex-info "All function inputs must be bound in a single relation." {:binding this})))))))

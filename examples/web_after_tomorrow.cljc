@@ -3,6 +3,9 @@
    [clj-3df.core :as df :use [exec!]]))
 
 
+;; This is the demo presented at Clojure/conj 2018
+;; https://www.youtube.com/watch?v=ZgqFlowyfTA
+
 
 (def schema
   {:system/time {:db/valueType :Number}
