@@ -61,14 +61,14 @@
 
     (exec! conn
       ;; 'manual' inputs
-      (df/create-attribute :shipment/payload)
-      (df/create-attribute :shipment/value)
-      (df/create-attribute :shipment/dest)
-      (df/create-attribute :shipment/pos)
-      (df/create-attribute :port/id)
-      (df/create-attribute :conn/from)
-      (df/create-attribute :conn/to)
-      (df/create-attribute :control/ports))
+      (df/create-attribute :shipment/payload :db.cardinality/many)
+      (df/create-attribute :shipment/value :db.cardinality/many)
+      (df/create-attribute :shipment/dest :db.cardinality/many)
+      (df/create-attribute :shipment/pos :db.cardinality/many)
+      (df/create-attribute :port/id :db.cardinality/many)
+      (df/create-attribute :conn/from :db.cardinality/many)
+      (df/create-attribute :conn/to :db.cardinality/many)
+      (df/create-attribute :control/ports :db.cardinality/many))
 
     (exec! conn
       (df/register-query db "logistics/finished"

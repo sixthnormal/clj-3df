@@ -11,6 +11,11 @@
 (defn encode-keyword [kw]
   (subs (str kw) 1))
 
+(def encode-semantics
+  {:db.semantics/raw              "Raw"
+   :db.semantics.cardinality/one  "CardinalityOne"
+   :db.semantics.cardinality/many "CardinalityMany"})
+
 (defn encode-plan [plan]
   (cond
     (symbol? plan)      (encode-symbol plan)

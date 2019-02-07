@@ -105,11 +105,16 @@
     {:names  (mapv encode/encode-keyword names)
      :source source}}])
 
-(defn create-attribute [attr]
-  [{:CreateAttribute {:name (encode/encode-keyword attr)}}])
+(defn create-attribute [attr semantics]
+  [{:CreateAttribute
+    {:name      (encode/encode-keyword attr)
+     :semantics (encode/encode-semantics semantics)}}])
 
 (defn create-db-inputs [^DB db]
-  (mapcat create-attribute (keys (.-schema db))))
+  (->> (seq (.-schema db))
+       (mapcat (fn [[name properties]]
+                 (let [semantics (get properties :db/semantics :db.semantics/raw)]
+                   (create-attribute name semantics))))))
 
 (defn advance-domain [next-t]
   [{:AdvanceDomain [nil next-t]}])
