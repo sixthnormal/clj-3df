@@ -396,13 +396,21 @@
     (def conn (create-debug-publication "ws://127.0.0.1:6262"))
     (exec-raw! conn (create-db-inputs db)))
 
-  (exec! conn (register-query db "loans" '[:find ?loan :where [?l oan :loanId ?i d]]))
+  (exec! conn (register-query db "loans" '[:find ?loan :where [?loan :loanId ?id]]))
 
   (register-graph-ql-plain conn db "AnOverview" overview)
 
   (exec! conn (transact db initial-data))
 
+  (def new-loan
+    [{:db/id      9
+      :loanId     "L3"
+      :loanFrom   8
+      :loanTo     2
+      :loanAmount 10000}])
   (exec! conn (transact db [[:db/add 8 :personId "C"] [:db/add 8 :personName "Charles"]]))
+  (exec! conn (transact db new-loan))
+
   (exec! conn (transact db [[:db/retract 8 :personId "C"] [:db/retract 8 :personName "Charles"]])))
 
 (comment
