@@ -2,7 +2,7 @@
   (:require
    [clojure.pprint :as pprint]
    [clj-3df.core :refer [create-conn create-db exec!
-                         register-plan register-query transact] :as df])
+                         register-plan query transact] :as df])
   (:gen-class))
 
 ;; LWW Register
@@ -53,7 +53,7 @@
 
   (exec! conn (df/create-db-inputs db))
 
-  (exec! conn (register-query db "lww_crdt" q rules))
+  (exec! conn (query db "lww_crdt" q rules))
 
   (exec! conn
     (transact db [{:db/id 1 :assign/time 4 :assign/key 100 :assign/value "X"}])

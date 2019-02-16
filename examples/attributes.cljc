@@ -21,11 +21,11 @@
                      [:db/add 100 :device/speed-many 1]]))
 
   (exec! conn
-    (df/register-query
+    (df/query
      db "speed-one"
      '[:find ?device ?speed 
        :where [?device :device/speed-one ?speed]])
-    (df/register-query
+    (df/query
      db "speed-many"
      '[:find ?device ?speed 
        :where [?device :device/speed-many ?speed]]))

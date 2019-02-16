@@ -50,6 +50,23 @@
                  [[?e2]
                   {:Join [[?e1] {:MatchA [?e1 :name ?n1]} {:MatchA [?e1 :friend ?e2]}]}
                   {:MatchA [?e2 :name ?n2]}]}]}
+             (compile-query query)))))
+
+  (testing "star join"
+    (let [query '[:find ?e ?name ?age ?salary ?is-admin
+                  :where
+                  [?e :name ?name]
+                  [?e :age ?age]
+                  [?e :salary ?salary]
+                  [?e :admin? ?is-admin]]]
+      (is (= '{:Project
+               [[?e ?name ?age ?salary ?admin]
+                {:Join
+                 [[?e]
+                  {:MatchA [?e :name ?name]}
+                  {:MatchA [?e :age ?age]}
+                  {:MatchA [?e :salary ?salary]}
+                  {:MatchA [?e :admin? ?is-admin]}]}]}
              (compile-query query))))))
 
 (deftest test-or

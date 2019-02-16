@@ -23,19 +23,19 @@
     (df/transact db [[:db/add 111 :settings/speed 100]]))
 
   (exec! conn
-    (df/register-query
+    (df/query
      db "current-speed"
      '[:find ?device ?speed 
        :where [?device :device/speed ?speed]]))
 
   (exec! conn
-    (df/register-query
+    (df/query
      db "current-settings"
      '[:find ?device ?speed 
        :where [?device :settings/speed ?speed]]))
 
   (exec! conn
-    (df/register-query
+    (df/query
      db "deviating"
      '[:find ?device ?deviation
        :where

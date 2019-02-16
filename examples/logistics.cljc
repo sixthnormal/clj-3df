@@ -71,26 +71,26 @@
       (df/create-attribute :control/ports :db.cardinality/many))
 
     (exec! conn
-      (df/register-query db "logistics/finished"
+      (df/query db "logistics/finished"
                          '[:find ?payload (sum ?val)
                            :where
                            (completed? ?e)
                            [?e :shipment/payload ?payload]
                            [?e :shipment/value ?val]] rules)
 
-      (df/register-query db "logistics/open"
+      (df/query db "logistics/open"
                          '[:find (count ?e)
                            :where
                            (on-going? ?e)] rules)
 
-      (df/register-query db "logistics/errors"
+      (df/query db "logistics/errors"
                          '[:find ?shipment
                            :where
                            (error ?shipment)] rules))
     )
 
   (exec! conn
-    (df/register-query db "logistics/error-cost"
+    (df/query db "logistics/error-cost"
                        '[:find (sum ?value)
                          :where
                          (logistics/errors ?shipment )
@@ -151,7 +151,7 @@
     (df/transact db [{:db/id 999 :control/ports 6}]))
 
   (exec! conn
-    (df/register-query db "analyst/shipments-at-port"
+    (df/query db "analyst/shipments-at-port"
                        '[:find ?e ?s
                          :where
                          [999 :control/ports ?p]

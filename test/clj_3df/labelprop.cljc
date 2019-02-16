@@ -1,6 +1,6 @@
 (ns clj-3df.labelprop
   (:require
-   [clj-3df.core :as df]))
+   [clj-3df.core :as df :refer [exec!]]))
 
 (def schema
   {:label {:db/valueType :Number}
@@ -10,21 +10,31 @@
   '[[(label ?x ?y) [?x :label ?y]]
     [(label ?x ?y) [?z :edge ?y] (label ?x ?z)]])
 
-(def db (create-db schema))
+(def db (df/create-db schema))
 
 (def q
   '[:find (count ?x ?y) :where (label ?x ?y)])
 
 (comment
 
-  (def conn (debug-conn "ws://127.0.0.1:6262"))
+  (def conn (df/debug-conn "ws://127.0.0.1:6262"))
 
   (exec! conn
-    (register-source ["edge"] {:PlainFile {:path "./data/labelprop/edges.httpd_df"}})
-    (register-source ["label"] {:PlainFile {:path "./data/labelprop/nodes.httpd_df"}})
-    )
+    (df/register-source
+     [:edge]
+     {:CsvFile {:path      "/Users/niko/data/labelprop/edges.httpd_df"
+                :separator " "
+                :schema    [[1 {:Eid 0}]]}})
+    (df/register-source
+     [:label]
+     {:CsvFile {:path      "/Users/niko/data/labelprop/nodes.httpd_df"
+                :separator " "
+                :schema    [[1 {:Eid 0}]]}}))
+
+  (exec! conn
+    (df/query db "test" '[:find ?x ?y :where [?x :label ?y]]))
   
   (exec! conn
-    (register-query db "labelprop" q rules))
+    (df/query db "labelprop" q rules))
 
   )

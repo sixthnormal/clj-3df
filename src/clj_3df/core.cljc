@@ -73,6 +73,9 @@
 (defn interest [name]
   [{:Interest {:name name}}])
 
+(defn flow [source-name sink-name]
+  [{:Flow [source-name sink-name]}])
+
 (defn register-plan [^DB db name plan rules]
   (let [;; @TODO expose this directly?
         ;; the top-level plan is just another rule...
@@ -93,17 +96,26 @@
          compiled-rules (if (empty? rules)
                           []
                           (compiler/compile-rules rules))]
-     (concat
-      [{:Register
-        {:publish [name]
-         :rules   (encode/encode-rules (conj compiled-rules top-rule))}}]
-      ;; @TODO split this off
-      (interest name)))))
+     [{:Register
+       {:publish [name]
+        :rules   (encode/encode-rules (conj compiled-rules top-rule))}}])))
+
+(defn query
+  ([^DB db name query] (query db name query []))
+  ([^DB db name query rules]
+   (concat
+    (register-query db name query rules)
+    (interest name))))
 
 (defn register-source [names source]
   [{:RegisterSource
     {:names  (mapv encode/encode-keyword names)
      :source source}}])
+
+(defn register-sink [name sink]
+  [{:RegisterSink
+    {:name name
+     :sink sink}}])
 
 (defn create-attribute [attr semantics]
   [{:CreateAttribute
@@ -293,7 +305,7 @@
   (let [c (async/chan)
         _ (async/sub (:pub conn) name c)]
     (exec-raw! conn
-      (register-query db name query))
+      (query db name query))
     (go-loop []
       (when-let [msg (<! c)]
         (callback (second msg))
@@ -328,7 +340,7 @@
       [?loan :loan/to ?to]
       [?loan :loan/over-50 ?over-50]])
   
-  (exec! conn (register-query db "loans" loans))
+  (exec! conn (query db "loans" loans))
 
   (exec! conn (transact db [[:db/add 1 :loan/amount 100] [:db/add 1 :loan/from "A"] [:db/add 1 :loan/to "B"] [:db/add 1 :loan/over-50 false]]))
 

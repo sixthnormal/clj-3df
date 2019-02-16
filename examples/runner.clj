@@ -11,7 +11,7 @@
 
       (doseq [[key query] (:queries config)]
         (df/exec! conn
-          (df/register-query db (name key) query (:rules config))))
+          (df/query db (name key) query (:rules config))))
 
       (doseq [tx (:transact config)]
         (df/exec! conn (df/transact db tx))))))

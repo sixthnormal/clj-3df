@@ -2,7 +2,7 @@
   (:require
    [clojure.pprint :as pprint]
    [clj-3df.core :refer [create-conn create-db exec!
-                         register-plan register-query transact]]
+                         register-plan query transact]]
    [manifold.stream :as stream]
    [manifold.bus :as bus])
   (:gen-class))
@@ -108,12 +108,12 @@
   (stream/consume #(pprint/pprint %) (bus/subscribe (:out conn) :out))
 
   (exec! conn
-    (register-query db "RGA" q rules)
-    ;; (register-query db "q_-id" q1 rules)
-    ;; (register-query db "q_current-value" q2 rules)
-    ;; (register-query db "q_next-visible" q3 rules)
-    ;; (register-query db "q_next-elem" q4 rules)
-    ;; (register-query db "q_has-value" q5 rules)
+    (query db "RGA" q rules)
+    ;; (query db "q_-id" q1 rules)
+    ;; (query db "q_current-value" q2 rules)
+    ;; (query db "q_next-visible" q3 rules)
+    ;; (query db "q_next-elem" q4 rules)
+    ;; (query db "q_has-value" q5 rules)
     )
 
   (exec! conn

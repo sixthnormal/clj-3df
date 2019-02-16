@@ -115,7 +115,7 @@
   ;; Queries are named and made available globally.
   
   (exec! conn
-    (df/register-query
+    (df/query
      db "conjbank/opt-ins"
      '[:find ?person ?name
        :where
@@ -155,7 +155,7 @@
   ;; as well as locally defined ones.
   
   (exec! conn
-    (df/register-query
+    (df/query
      db "conjbank/debts"
      '[:find ?name (sum ?amount)
        :where
@@ -172,7 +172,7 @@
   ;; amount owed to her.
 
   (exec! conn
-    (df/register-query
+    (df/query
      db "session-1234/receivables"
      '[:find (sum ?amount)
        :where

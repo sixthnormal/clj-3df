@@ -36,7 +36,7 @@ For example, consider a subscriber created the following subscription:
 
 ``` clojure
 (exec! conn
-  (register-query db "user inbox" 
+  (query db "user inbox" 
     '[:find ?msg ?content
       :where 
       [?msg :msg/recipient "me@nikolasgoebel.com"]

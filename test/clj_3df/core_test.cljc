@@ -4,7 +4,7 @@
       :cljs [cljs.test :refer-macros [deftest is testing run-tests]])
    #?(:clj  [clojure.core.async :as async :refer [<! >! go-loop]]
       :cljs [cljs.core.async :as async :refer [<! >!]])
-   [clj-3df.core :as df :refer [exec! create-db-inputs create-debug-conn register-query register-plan transact]])
+   [clj-3df.core :as df :refer [exec! create-db-inputs create-debug-conn query register-plan transact]])
   #?(:cljs (:require-macros [clj-3df.core :refer [exec!]]
                             [cljs.core.async :refer [go-loop]])))
 
@@ -32,7 +32,7 @@
                                    (read? ?user ?parent)))]])
 
   (exec! conn
-    (register-query
+    (query
      db "rba"
      '[:find ?user ?obj :where (read? ?user ?obj)]
      rules))
@@ -52,7 +52,7 @@
   (exec! conn
     (transact db [[:db/add 100 :read 901]])
     (transact db [[:db/add 901 :parent/child 902]])
-    (register-query db "rba" '[:find ?user ?obj :where (read? ?user ?obj)] rules))
+    (query db "rba" '[:find ?user ?obj :where (read? ?user ?obj)] rules))
 
   )
 
@@ -71,7 +71,7 @@
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
     (exec! (debug-conn)
       (create-db-inputs db)
-      (register-query db name '[:find ?e ?age :where [?e :name "Mabel"] [?e :age ?age]])
+      (query db name '[:find ?e ?age :where [?e :name "Mabel"] [?e :age ?age]])
       (transact db [[:db/add 1 :name "Dipper"] [:db/add 1 :age 26]])
       (transact db [{:db/id 2 :name "Mabel" :age 26}])
       (expect-> out (is (= [name [[[2 26] 1 1]]] out)))
@@ -83,7 +83,7 @@
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
     (exec! (debug-conn)
       (create-db-inputs db)
-      (register-query db name '[:find ?e1 ?e2
+      (query db name '[:find ?e1 ?e2
                                 :where
                                 [?e1 :name ?name] [?e1 :age ?age]
                                 [?e2 :name ?name] [?e2 :age ?age]])
@@ -99,7 +99,7 @@
         db   (df/create-db {:name {:db/valueType :String}})]
     (exec! (debug-conn)
       (create-db-inputs db)
-      ;; (register-query db name '[:find ?e1 ?e2 :where [?e1 :name ?n1] [?e2 :name ?n2]])
+      ;; (query db name '[:find ?e1 ?e2 :where [?e1 :name ?n1] [?e2 :name ?n2]])
       (register-plan db name '{:Project
                                [[?e1 ?e2]
                                 {:Join [[]
@@ -116,7 +116,7 @@
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
     (exec! (debug-conn)
       (create-db-inputs db)
-      (register-query db name '[:find ?e :where (or [?e :name "Mabel"] [?e :name "Dipper"])])
+      (query db name '[:find ?e :where (or [?e :name "Mabel"] [?e :name "Dipper"])])
       (transact db [[:db/add 1 :name "Dipper"] [:db/add 1 :age 26]])
       (expect-> out (is (= [name [[[1] 0 1]]] out)))
       (transact db [{:db/id 2 :name "Mabel" :age 26}])
@@ -129,7 +129,7 @@
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
     (exec! (debug-conn)
       (create-db-inputs db)
-      (register-query db name '[:find ?e
+      (query db name '[:find ?e
                                 :where
                                 [?e :name "Mabel"]
                                 (or [?e :age 14]
@@ -148,7 +148,7 @@
         db   (df/create-db {:name {:db/valueType :String} :age {:db/valueType :Number}})]
     (exec! (debug-conn)
       (create-db-inputs db)
-      (register-query db name '[:find ?e :where [?e :name "Mabel"] (not [?e :age 25])])
+      (query db name '[:find ?e :where [?e :name "Mabel"] (not [?e :age 25])])
       (transact db [{:db/id 1 :name "Mabel" :age 25}])
       (transact db [{:db/id 2 :name "Mabel" :age 42}])
       (expect-> out (is (= [name [[[2] 1 1]]] out)))
@@ -160,7 +160,7 @@
         db   (df/create-db {:age {:db/valueType :Number}})]
     (exec! (debug-conn)
       (create-db-inputs db)
-      (register-query db name '[:find (min ?age) :where [?user :age ?age]])
+      (query db name '[:find (min ?age) :where [?user :age ?age]])
       (transact db [{:db/id 1 :age 12}
                     {:db/id 2 :age 25}])
       (expect-> out (is (= [name [[[12] 0 1]]] out)))
@@ -172,7 +172,7 @@
         db   (df/create-db {:age {:db/valueType :Number}})]
     (exec! (debug-conn)
       (create-db-inputs db)
-      (register-query db name '[:find (max ?age) :where [?user :age ?age]])
+      (query db name '[:find (max ?age) :where [?user :age ?age]])
       (transact db [{:db/id 1 :age 12}
                     {:db/id 2 :age 25}])
       (expect-> out (is (= [name [[[25] 0 1]]] out)))
@@ -184,7 +184,7 @@
         db   (df/create-db {:age {:db/valueType :Number}})]
     (exec! (debug-conn)
       (create-db-inputs db)
-      (register-query db name '[:find (count ?user) :where [?user :age ?age]])
+      (query db name '[:find (count ?user) :where [?user :age ?age]])
       (transact db [{:db/id 1 :age 12}
                     {:db/id 2 :age 25}])
       (expect-> out (is (= [name [[[2] 0 1]]] out)))
@@ -211,6 +211,6 @@
                       [:db/add 901 :parent/child 902]]))
       (Thread/sleep 1000)
       (exec! conn
-        (register-query db name '[:find ?user ?obj
+        (query db name '[:find ?user ?obj
                                   :where (read? ?user ?obj)] rules)
         (expect-> out (is (= [name [[[100 901] 0 1] [[100 902] 0 1]]] out)))))))
