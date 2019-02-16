@@ -174,13 +174,19 @@
 
 (defrecord Connection [ws out middleware pub])
 
+(defn parse-result
+  [result]
+  (let [unwrap-type  (fn [boxed] (second (first boxed)))
+        unwrap-tuple (fn [[tuple time diff :as result-diff]]
+                       (if (vector? tuple)
+                         [(mapv unwrap-type tuple) time diff]
+                         result-diff))
+        xf-batch     (map unwrap-tuple)]
+    (let [[query_name results] (parse-json result)]
+      [query_name (into [] xf-batch results)])))
+
 (def xf-parse
-  (map (fn [result]
-         (let [unwrap-type  (fn [boxed] (second (first boxed)))
-               unwrap-tuple (fn [[tuple time diff]] [(mapv unwrap-type tuple) time diff])
-               xf-batch     (map unwrap-tuple)]
-           (let [[query_name results] (parse-json result)]
-             [query_name (into [] xf-batch results)])))))
+  (map parse-result))
 
 #?(:clj (defn- create-middleware
           "subs to ws changes and pushes them to out. Applies f on ws changes."
@@ -219,7 +225,7 @@
           ([url middleware] (create-conn url middleware nil))
           ([url middleware options]
            (let [ws  @(http/websocket-client url)
-                 out (:channel options (async/chan 100 xf-parse))
+                 out (:channel options (async/chan 100))
                  mw  (create-middleware ws out middleware)]
              (.start mw)
              (->Connection ws out mw nil)))))
@@ -234,7 +240,7 @@
               (->Connection ws out mw nil)))))
 
 (defn create-debug-conn [url]
-  (create-conn url (fn [result] (println result))))
+  (create-conn url (comp pprint/pprint parse-result)))
 
 (defn create-publication
   ([url] (create-publication url nil))
