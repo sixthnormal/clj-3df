@@ -1,8 +1,7 @@
 (ns rga
   (:require
    [clojure.pprint :as pprint]
-   [clj-3df.core :refer [create-conn create-db exec!
-                         register-plan query transact]]
+   [clj-3df.core :refer [create-conn create-db exec! query transact]]
    [manifold.stream :as stream]
    [manifold.bus :as bus])
   (:gen-class))

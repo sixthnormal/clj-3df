@@ -1,6 +1,7 @@
 (ns clj-3df.ldbc
   (:require
-   [clj-3df.core :as df :refer [exec!]]))
+   [clj-3df.core :as df :refer [exec!]]
+   [clj-3df.binding :as binding]))
 
 (def schema
   {:system/time {:db/valueType :Number}
@@ -17,10 +18,14 @@
 
    :post/creation-date {:db/valueType :String}
 
-   :comment/ip      {:db/valueType :String}
-   :comment/browser {:db/valueType :String}
-   :comment/content {:db/valueType :String}
-   :comment/creator {:db/valueType :Eid}
+   :comment/creation-date  {:db/valueType :String}
+   :comment/ip             {:db/valueType :String}
+   :comment/browser        {:db/valueType :String}
+   :comment/content        {:db/valueType :String}
+   :comment/creator        {:db/valueType :Eid}
+   :comment/place          {:db/valueType :Eid}
+   :comment/parent-post    {:db/valueType :Eid}
+   :comment/parent-comment {:db/valueType :Eid}
    })
 
 (def db (df/create-db schema))
@@ -64,14 +69,15 @@
 
     (exec! conn
       (df/register-source
-       [#_:eid #_timestamp :comment/ip :comment/browser :comment/content]
+       [#_:eid :comment/creation-date :comment/ip :comment/browser :comment/content]
        {:CsvFile (merge ldbc-defaults
-                        {:path             "/Users/niko/data/1k-users/comment.csv"
-                         :eid_offset       0
-                         :timestamp_offset 1
-                         :schema           [[2 {:String ""}]
-                                            [3 {:String ""}]
-                                            [4 {:String ""}]]})}))
+                        {:path       "/Users/niko/data/1k-users/comment.csv"
+                         :eid_offset 0
+                         ;; :timestamp_offset 1
+                         :schema     [[1 {:String ""}]
+                                      [2 {:String ""}]
+                                      [3 {:String ""}]
+                                      [4 {:String ""}]]})}))
 
     (exec! conn
       (df/register-source
@@ -79,9 +85,27 @@
        {:CsvFile (merge ldbc-defaults
                         {:path       "/Users/niko/data/1k-users/comment_hasCreator_person.csv"
                          :eid_offset 0
+                         :schema     [[1 {:Eid 0}]]})})
+      (df/register-source
+       [#_:eid :comment/place]
+       {:CsvFile (merge ldbc-defaults
+                        {:path       "/Users/niko/data/1k-users/comment_isLocatedIn_place.csv"
+                         :eid_offset 0
+                         :schema     [[1 {:Eid 0}]]})})
+      (df/register-source
+       [#_:eid :comment/parent-comment]
+       {:CsvFile (merge ldbc-defaults
+                        {:path       "/Users/niko/data/1k-users/comment_replyOf_comment.csv"
+                         :eid_offset 0
+                         :schema     [[1 {:Eid 0}]]})})
+      (df/register-source
+       [#_:eid :comment/parent-post]
+       {:CsvFile (merge ldbc-defaults
+                        {:path       "/Users/niko/data/1k-users/comment_replyOf_post.csv"
+                         :eid_offset 0
                          :schema     [[1 {:Eid 0}]]})}))
 
-    (exec! conn
+    #_(exec! conn
       (df/register-source
        [#_:eid :person/likes-post #_:timestamp]
        {:CsvFile (merge ldbc-defaults
@@ -97,9 +121,9 @@
 
   ;; advance to now
   (exec! conn
-    (df/advance-domain 1550325946))
+    (df/advance-domain 1650360833))
 
-  (exec! conn
+  #_(exec! conn
     (df/query
      db "person-count"
      '[:find (count ?person)
@@ -110,6 +134,12 @@
 
   (exec! conn
     (df/query
+     db "person-count"
+     '[:find (count ?person)
+       :where [?person :person/firstname "Chengdong"]]))
+
+  #_(exec! conn
+    (df/query
      db "likes"
      '[:find ?person (count ?post)
        :where
@@ -117,17 +147,20 @@
        [?post :post/creation-date ?creation-date]]))
 
   (exec! conn
-    (df/register-query
+    (df/register
      db "comment_event_stream"
-     '[:find
-       #_?id ?person #_?creationDate #_?ip #_?browser
-       #_?content #_?reply_to_postId #_?reply_to_commentId #_?placeId
-       :where
-       [?person :person/firstname "Chengdong"]
-       ;; [?comment :comment/creator ?person]
-       ;; [?comment :comment/ip ?ip]
-       ;; [?comment :comment/browser ?browser]
-       #_[?comment :comment/content ?content]])
+     {:Hector
+      {:variables '[?comment ?person ?creationDate ?ip ?browser
+                    ?content ?parent-post ?parent-comment ?place]
+       :bindings  [(binding/attribute '[?comment :comment/creation-date ?creationDate])
+                   (binding/attribute '[?comment :comment/creator ?person])
+                   (binding/attribute '[?comment :comment/ip ?ip])
+                   (binding/attribute '[?comment :comment/browser ?browser])
+                   (binding/attribute '[?comment :comment/content ?content])
+                   (binding/attribute '[?comment :comment/place ?place])
+                   (binding/optional-attribute '[?comment :comment/parent-post ?parent-post ""])
+                   (binding/optional-attribute '[?comment :comment/parent-comment ?parent-comment ""])]}}
+     [])
     (df/flow "comment_event_stream" "ldbc.sinks/csv"))
   
   )

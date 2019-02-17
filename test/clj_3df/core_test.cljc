@@ -4,7 +4,7 @@
       :cljs [cljs.test :refer-macros [deftest is testing run-tests]])
    #?(:clj  [clojure.core.async :as async :refer [<! >! go-loop]]
       :cljs [cljs.core.async :as async :refer [<! >!]])
-   [clj-3df.core :as df :refer [exec! create-db-inputs create-debug-conn query register-plan transact]])
+   [clj-3df.core :as df :refer [exec! create-db-inputs create-debug-conn query register interest transact]])
   #?(:cljs (:require-macros [clj-3df.core :refer [exec!]]
                             [cljs.core.async :refer [go-loop]])))
 
@@ -100,11 +100,12 @@
     (exec! (debug-conn)
       (create-db-inputs db)
       ;; (query db name '[:find ?e1 ?e2 :where [?e1 :name ?n1] [?e2 :name ?n2]])
-      (register-plan db name '{:Project
-                               [[?e1 ?e2]
-                                {:Join [[]
-                                        {:MatchA [?e1 :name ?n1]}
-                                        {:MatchA [?e2 :name ?n2]}]}]} [])
+      (register db name '{:Project
+                          [[?e1 ?e2]
+                           {:Join [[]
+                                   {:MatchA [?e1 :name ?n1]}
+                                   {:MatchA [?e2 :name ?n2]}]}]} [])
+      (interest name)
       (transact db [[:db/add 1 :name "Dipper"]
                     [:db/add 2 :name "Mabel"]])
       (expect-> out (is (= [name [[[1 1] 0 1] [[1 2] 0 1] [[2 1] 0 1] [[2 2] 0 1]]] out)))

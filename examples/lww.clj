@@ -1,8 +1,7 @@
 (ns lww
   (:require
    [clojure.pprint :as pprint]
-   [clj-3df.core :refer [create-conn create-db exec!
-                         register-plan query transact] :as df])
+   [clj-3df.core :refer [create-conn create-db exec! query transact] :as df])
   (:gen-class))
 
 ;; LWW Register

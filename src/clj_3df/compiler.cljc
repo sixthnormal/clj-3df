@@ -3,7 +3,8 @@
    [clojure.string :as str]
    [clojure.set :as set]
    #?(:clj [clojure.spec.alpha :as s]
-      :cljs [cljs.spec.alpha :as s])))
+      :cljs [cljs.spec.alpha :as s])
+   [clj-3df.encode :as encode]))
 
 ;; UTIL
 
@@ -31,13 +32,6 @@
    ctx))
 
 (def ^{:arglists '([pred] [pred coll])} separate (juxt filter remove))
-
-(defn- encode-value [v]
-  (cond
-    (string? v)  {:String v}
-    (number? v)  {:Number v}
-    (keyword? v) {:Aid (subs (str v) 1)}
-    (boolean? v) {:Bool v}))
 
 ;; GRAMMAR
 
@@ -194,7 +188,7 @@
       ::lookup  (let [[e a sym-v] pattern] {:MatchEA [e a sym-v]})
       ::entity  (let [[e sym-a sym-v] pattern] {:MatchE [e sym-a sym-v]})
       ::hasattr (let [[sym-e a sym-v] pattern] {:MatchA [sym-e a sym-v]})
-      ::filter  (let [[sym-e a [_ v]] pattern] {:MatchAV [sym-e a (encode-value v)]}))))
+      ::filter  (let [[sym-e a [_ v]] pattern] {:MatchAV [sym-e a (encode/encode-value v)]}))))
 
 (defrecord NameExpr [rule-name symbols]
   ;; RuleExpr and NameExpr are equivalent
@@ -215,12 +209,11 @@
   (bound-symbols [this]
     (if (some? binding) (bound-symbols binding) args))
   (plan [this]
-    (let [encode-predicate {'< "LT" '<= "LTE" '> "GT" '>= "GTE" '= "EQ" 'not= "NEQ"}
-          symbols          (bound-symbols this)]
+    (let [symbols (bound-symbols this)]
       (if (some? binding)
-        {:Filter [args (encode-predicate predicate) (plan binding) (offset-map->vec 2 offset->const)]}
+        {:Filter [args (encode/encode-predicate predicate) (plan binding) (offset-map->vec 2 offset->const)]}
         (if debug?
-          {:Filter [args (encode-predicate predicate) :_ offset->const]}
+          {:Filter [args (encode/encode-predicate predicate) :_ offset->const]}
           (throw (ex-info "All predicate inputs must be bound in a single relation." {:binding this})))))))
 
 (defrecord Aggregation [fn-symbols args key-symbols binding symbols with]
@@ -257,12 +250,11 @@
   (bound-symbols [this]
     (if (some? binding) (conj (bound-symbols binding) result-sym) (conj args result-sym)))
   (plan [this]
-    (let [encode-fn (comp str/upper-case name)]
-      (if (some? binding)
-        {:Transform [args result-sym (plan binding) (encode-fn fn) (offset-map->vec 2 offset->const)]}
-        (if debug?
-          {:Transform [args result-sym (encode-fn fn) :_ offset->const]}
-          (throw (ex-info "All function inputs must be bound in a single relation." {:binding this})))))))
+    (if (some? binding)
+      {:Transform [args result-sym (plan binding) (encode/encode-fn fn) (offset-map->vec 2 offset->const)]}
+      (if debug?
+        {:Transform [args result-sym (encode/encode-fn fn) :_ offset->const]}
+        (throw (ex-info "All function inputs must be bound in a single relation." {:binding this}))))))
 
 ;; In the first pass the tree of (potentially) nested,
 ;; context-modifying operators is navigated and all bindings are
@@ -279,7 +271,7 @@
         (fn [state [offset [typ arg]]]
           (case typ
             :var   (update state :normalized-args conj arg)
-            :const (update state :offset->const assoc offset (encode-value (second arg)))))
+            :const (update state :offset->const assoc offset (encode/encode-value (second arg)))))
         {:offset->const {} :normalized-args []})))
 
 (defmulti normalize (fn [ctx clause] (first clause)))

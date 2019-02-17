@@ -76,16 +76,13 @@
 (defn flow [source-name sink-name]
   [{:Flow [source-name sink-name]}])
 
-(defn register-plan [^DB db name plan rules]
+(defn register [^DB db name plan rules]
   (let [;; @TODO expose this directly?
         ;; the top-level plan is just another rule...
         top-rule {:name name :plan plan}]
-    (concat
-     [{:Register
-       {:publish [name]
-        :rules   (encode/encode-rules (conj rules top-rule))}}]
-     ;; @TODO split this off
-     (interest name))))
+    [{:Register
+      {:publish [name]
+       :rules   (encode/encode-rules (conj rules top-rule))}}]))
 
 (defn register-query
   ([^DB db name query] (register-query db name query []))
@@ -101,10 +98,10 @@
         :rules   (encode/encode-rules (conj compiled-rules top-rule))}}])))
 
 (defn query
-  ([^DB db name query] (query db name query []))
-  ([^DB db name query rules]
+  ([^DB db name q] (query db name q []))
+  ([^DB db name q rules]
    (concat
-    (register-query db name query rules)
+    (register-query db name q rules)
     (interest name))))
 
 (defn register-source [names source]

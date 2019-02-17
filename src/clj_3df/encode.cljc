@@ -1,15 +1,33 @@
 (ns clj-3df.encode
   "Utilties for encoding query plans to something that the backend can
   understand. In particular, attributes and symbols will be encoded as
-  integers.")
+  integers."
+  (:require [clojure.string :as str]))
 
 (def nextID (atom 0))
 
 (def encode-symbol (memoize (fn [sym] #?(:clj  (clojure.lang.RT/nextID)
                                          :cljs (swap! nextID inc)))))
 
+(defn encode-value [v]
+  (cond
+    (string? v)  {:String v}
+    (number? v)  {:Number v}
+    (keyword? v) {:Aid (subs (str v) 1)}
+    (boolean? v) {:Bool v}))
+
 (defn encode-keyword [kw]
   (subs (str kw) 1))
+
+(def encode-predicate
+  {'<    "LT"
+   '<=   "LTE"
+   '>    "GT"
+   '>=   "GTE"
+   '=    "EQ"
+   'not= "NEQ"})
+
+(def encode-fn (comp str/upper-case name))
 
 (def encode-semantics
   {:db.semantics/raw              "Raw"
