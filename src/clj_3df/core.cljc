@@ -217,7 +217,7 @@
 #?(:cljs (defn- create-middleware
           "subs to ws changes and pushes them to out. Applies f on ws changes."
            [ws out f]
-           (js/console.log "[SUBSCRIBER] running")
+           (println "[MIDDLEWARE] running")
            (go-loop []
              (when-let [result (<! (:source ws))]
                (if (= result :drained)
@@ -244,7 +244,7 @@
            ([url middleware] (create-conn url middleware nil))
            ([url middleware options]
             (let [ws  (socket/connect url)
-                  out (:channel options (async/chan 100 xf-parse))
+                  out (:channel options (async/chan 100))
                   mw  (create-middleware ws out middleware)]
               (->Connection ws out mw nil)))))
 
