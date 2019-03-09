@@ -4,23 +4,23 @@
 
 (defn attribute [[e name v]]
   {:Attribute
-   {:symbols          [e v]
+   {:variables        [e v]
     :source_attribute name}})
 
 (defn optional-attribute [[e name v default]]
   {:Attribute
-   {:symbols          [e v]
+   {:variables        [e v]
     :source_attribute name
     :default          (encode/encode-value default)}})
 
 (defn constant [[symbol value]]
   {:Constant
-   {:symbol symbol
-    :value  (encode/encode-value value)}})
+   {:variable symbol
+    :value    (encode/encode-value value)}})
 
 (defn binary-predicate [[predicate x y]]
   {:BinaryPredicate
-   {:symbols   [x y]
+   {:variables [x y]
     :predicate (encode/encode-predicate predicate)}})
 
 (comment

@@ -73,6 +73,9 @@
 (defn interest [name]
   [{:Interest {:name name}}])
 
+(defn uninterest [name]
+  [{:Uninterest name}])
+
 (defn flow [source-name sink-name]
   [{:Flow [source-name sink-name]}])
 
