@@ -1,8 +1,6 @@
 (ns clj-3df.core
   (:refer-clojure :exclude [resolve])
   (:require
-   #?(:clj  [clojure.core.async :as async :refer [<! >! >!! <!! go go-loop]]
-      :cljs [cljs.core.async :as async :refer [<! >!]])
    #?(:clj  [clojure.spec.alpha :as s]
       :cljs [cljs.spec.alpha :as s])
    #?(:clj  [aleph.http :as http])
@@ -13,9 +11,7 @@
    [clojure.string :as str]
    [clojure.set :as set]
    [clj-3df.compiler :as compiler]
-   [clj-3df.encode :as encode])
-  #?(:cljs (:require-macros [cljs.core.async.macros :refer [go-loop]]
-                            [clj-3df.core :refer [exec!]])))
+   [clj-3df.encode :as encode]))
 
 ;; HELPER
 
@@ -183,8 +179,6 @@
                            [] tx-data)]
      [{:Transact tx-data}])))
 
-(defrecord Connection [ws out middleware pub])
-
 (defn parse-result
   [result]
   (let [unwrap-type  (fn [boxed] (second (first boxed)))
@@ -196,129 +190,96 @@
     (let [[query_name results] (parse-json result)]
       [query_name (into [] xf-batch results)])))
 
-(def xf-parse
-  (map parse-result))
+(defrecord Connection [ws listeners query-listeners])
 
-#?(:clj (defn- create-middleware
-          "subs to ws changes and pushes them to out. Applies f on ws changes."
-          [ws out f]
-          (Thread.
-           (fn []
-             (println "[MIDDLEWARE] running")
-             (loop []
-               (when-let [result @(stream/take! ws ::drained)]
-                 (if (= result ::drained)
-                   (do
-                     (println "[MIDDLEWARE] server closed connection")
-                     (async/close! out))
-                   (do
-                     (when (some? f) (f result))
-                     (>!! out result)
-                     (recur)))))))))
+(defn listen!
+  "Registers a callback that gets called on any message received from
+  the 3DF server."
+  ([^Connection conn callback] (listen! conn (rand) callback))
+  ([^Connection conn key callback]
+   (swap! (.-listeners conn) assoc key callback)
+   key))
 
-#?(:cljs (defn- create-middleware
-          "subs to ws changes and pushes them to out. Applies f on ws changes."
-           [ws out f]
-           (println "[MIDDLEWARE] running")
-           (go-loop []
-             (when-let [result (<! (:source ws))]
-               (if (= result :drained)
-                 (do
-                   (println "[SUBSCRIBER] server closed connection")
-                   (async/close! out))
-                 (do
-                   (when (some? f) (f result))
-                   (>! out result)
-                   (recur)))))))
+(defn unlisten!
+  "Unregisters a callback that was previously registered via `listen!`."
+  [^Connection conn key]
+  (swap! (.-listeners conn) dissoc key))
 
-#?(:clj (defn create-conn
-          ([url] (create-conn url nil nil))
-          ([url middleware] (create-conn url middleware nil))
-          ([url middleware options]
-           (let [ws  @(http/websocket-client url)
-                 out (:channel options (async/chan 100))
-                 mw  (create-middleware ws out middleware)]
-             (.start mw)
-             (->Connection ws out mw nil)))))
+(defn listen-query!
+  "Registers a callback that gets called on any result diffs received
+  for the specified query."
+  ([^Connection conn query callback] (listen-query! conn query (rand) callback))
+  ([^Connection conn query key callback]
+   (swap! (.-query-listeners conn) assoc-in [query key] callback)
+   key))
 
-#?(:cljs (defn create-conn
-           ([url] (create-conn url nil nil))
-           ([url middleware] (create-conn url middleware nil))
-           ([url middleware options]
-            (let [ws  (socket/connect url)
-                  out (:channel options (async/chan 100))
-                  mw  (create-middleware ws out middleware)]
-              (->Connection ws out mw nil)))))
+(defn unlisten-query!
+  "Unregisters a callback that was previously registered via
+  `listen-query!`."
+  [^Connection conn query key]
+  (swap! (.-query-listeners conn) update-in query dissoc key))
 
-(defn create-debug-conn [url]
-  (create-conn url (comp pprint/pprint parse-result)))
+#?(:clj (defn create-conn!
+          [url]
+          (let [conn (->Connection nil (atom {}) (atom {}))
+                ws   @(http/websocket-client url)
+                mw   (Thread.
+                      (fn []
+                        (println "[MIDDLEWARE] running")
+                        (loop []
+                          (when-let [result @(stream/take! ws ::drained)]
+                            (if (= result ::drained)
+                              (println "[MIDDLEWARE] server closed connection")
+                              (let [data (parse-result result)]
+                                (let [listeners @(.-listeners conn)]
+                                  (doseq [listener (vals listeners)]
+                                    (apply listener [data])))
+                                (let [[query diff]    data
+                                      query-listeners @(.-query-listeners conn)
+                                      listeners       (get query-listeners query [])]
+                                  (doseq [listener (vals listeners)]
+                                    (apply listener [diff])))
+                                (recur)))))))]
+            (.start mw)
+            (assoc conn :ws ws))))
 
-(defn create-publication
-  ([url] (create-publication url nil))
-  ([url middleware]
-   (let [^Connection conn (create-conn url middleware)]
-     (assoc conn :pub (async/pub (:out conn) first)))))
+#?(:cljs (defn create-conn!
+           [url]
+           (let [conn       (->Connection nil (atom {}) (atom {}))
+                 on-open    (fn [_] (println "Socket opened"))
+                 on-message (fn [e]
+                              (let [data (parse-result (.-data e))]
+                                (let [listeners @(.-listeners conn)]
+                                  (doseq [listener (vals listeners)]
+                                    (apply listener [data])))))
+                 on-close   (fn [_] (println "Socket closed"))]
+             (assoc conn
+                    :ws (socket/connect! url on-open on-message on-close)))))
 
-(defn create-debug-publication [url]
-  (create-publication url (fn [result] (println result))))
+(defn create-debug-conn!
+  "Shortcut to create a new connection that will pretty-print all
+  received messages."
+  [url]
+  (let [conn (create-conn! url)]
+    (listen! conn pprint/pprint)
+    conn))
 
-(defn exec-raw! [conn requests]
-  (->> requests
+(defn exec!
+  "Batches and serializes the provided requests and sends them along the
+  3DF connection."
+  [^Connection conn & batches]
+  (->> batches
+       (apply concat)
        (stringify)
        #?(:clj (stream/put! (.-ws conn)))
-       #?(:cljs (>! (:sink (.-ws conn))))))
+       #?(:cljs (socket/put! (.-ws conn)))))
 
-(defn- if-cljs [env then else]
-  (if (:ns env) then else))
 
-#?(:clj (defmacro exec! [^Connection conn & forms]
-          (if-cljs &env
-                   (let [c   (gensym)
-                         out (gensym)]
-                     `(let [~c   ~conn
-                            ~out (.-out ~c)]
-                        (cljs.core.async/go
-                          (do ~@(for [form forms]
-                                (cond
-                                  (nil? form) (throw (ex-info "Nil form within execution." {:form form}))
-                                  (seq? form)
-                                  (case (first form)
-                                    'expect-> `(clojure.core/as-> (cljs.core.async/<! ~out) ~@(rest form))
-                                    `(clojure.core/->> ~form (clj-3df.core/stringify) (cljs.core.async/>! (:sink (.-ws ~c)))))))))))
-                   (let [c   (gensym)
-                         out (gensym)]
-                     `(let [~c   ~conn
-                            ~out (.-out ~c)]
-                        (do ~@(for [form forms]
-                                (cond
-                                  (nil? form) (throw (ex-info "Nil form within execution." {:form form}))
-                                  (seq? form)
-                                  (case (first form)
-                                    'expect-> `(clojure.core/as-> (<!! ~out) ~@(rest form))
-                                    `(clojure.core/->> ~form (clj-3df.core/stringify) (stream/put! (.-ws ~c))))))))))))
-
-(defn business-rule
-  "registers a query. Subscribes to its messages and calls callback with them."
-  [^Connection conn ^DB db name query callback]
-  (when (nil? (:pub conn)) (throw (ex-info "Business rule registered on non-pub connection" conn)))
-  (let [c (async/chan)
-        _ (async/sub (:pub conn) name c)]
-    (exec-raw! conn
-      (query db name query))
-    (go-loop []
-      (when-let [msg (<! c)]
-        (callback (second msg))
-        (recur)))))
 
 (comment
 
-  ;; pick one, for business rules, pick a *-publication conn
-  (def conn (create-conn "ws://127.0.0.1:6262"))
-  (def conn (create-debug-conn "ws://127.0.0.1:6262"))
-  (def conn (create-conn "ws://127.0.0.1:6262" (fn [r] (println "ghetto mw"))))
-  (def conn (create-publication "ws://127.0.0.1:6262"))
-  (def conn (create-debug-publication "ws://127.0.0.1:6262"))
-  (def conn (create-publication "ws://127.0.0.1:6262" (fn [r] (println "pub mw" r))))
+  (def conn (create-conn! "ws://127.0.0.1:6262"))
+  (def conn (create-debug-conn! "ws://127.0.0.1:6262"))
 
   (def schema
     {:loan/amount  {:db/valueType :Number}
@@ -339,26 +300,39 @@
       [?loan :loan/to ?to]
       [?loan :loan/over-50 ?over-50]])
   
-  (exec! conn (query db "loans" loans))
+  (exec! conn
+    (query db "loans" loans))
 
-  (exec! conn (transact db [[:db/add 1 :loan/amount 100] [:db/add 1 :loan/from "A"] [:db/add 1 :loan/to "B"] [:db/add 1 :loan/over-50 false]]))
+  (exec! conn
+    (transact db [[:db/add 1 :loan/amount 100]
+                  [:db/add 1 :loan/from "A"]
+                  [:db/add 1 :loan/to "B"]
+                  [:db/add 1 :loan/over-50 false]]))
 
-  (def loans>50
-    "marks loans that are > 50"
-    '[:find ?loan ?amount
-      :where
-      [?loan :loan/amount ?amount]])
-  
-  (business-rule conn db "loans>50" loans>50
-    (fn [diffs]
-      (println "executing rule loans>50")
-      (doseq [[[id amount] op] diffs]
-        (when (pos? op)
-          (exec! conn (transact db [[:db/retract id :loan/over-50 false]]))
-          (exec! conn (transact db [[:db/add id :loan/over-50 (> amount 50)]]))))))
+  (exec! conn
+    (query db "loans>50"
+     '[:find ?loan ?amount
+       :where
+       [?loan :loan/amount ?amount]
+       [(> ?amount 50)]]))
 
-  (exec! conn (transact db [{:db/id 2 :loan/amount 200 :loan/from "B" :loan/to "A" :loan/over-50 false}]))
+  (listen-query!
+   conn "loans>50"
+   (fn [diffs]
+     (println "executing rule loans>50" diffs)
+     (doseq [[[id amount] op] diffs]
+       (when (pos? op)
+         (exec! conn (transact db [[:db/retract id :loan/over-50 false]]))
+         (exec! conn (transact db [[:db/add id :loan/over-50 (> amount 50)]]))))))
 
-  (exec! conn (transact db [[:db/retract 1 :loan/amount 100]]))
+  (exec! conn
+    (transact db [{:db/id        2
+                   :loan/amount  200
+                   :loan/from    "B"
+                   :loan/to      "A"
+                   :loan/over-50 false}]))
+
+  (exec! conn
+    (transact db [[:db/retract 1 :loan/amount 100]]))
   )
 

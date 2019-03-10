@@ -1,37 +1,32 @@
 (ns clj-3df.socket
-  "A namespace for opening WebSockets in ClojureScript.
-   Thanks to https://github.com/weavejester/haslett."
-  (:require [cljs.core.async :as async :refer [<! >!]])
-  (:require-macros [cljs.core.async.macros :refer [go-loop]]))
+  "Wrapping JS WebSockets in ClojureScript in an attempt to align the
+  interfaces on both platforms.")
 
-(defn connect
-  "Create a WebSocket to the specified URL, and returns a 'stream' map of three keys:
-   - source: async chan to listen to.
-   - sink: async chan to write to
-   - socket: the WebSocket
-   In options one can supply custom channels and protocols."
-  ([url]
-   (connect url {}))
-  ([url options]
-   (let [protocols (into-array (:protocols options []))
-         socket    (js/WebSocket. url protocols)
-         source    (:source options (async/chan))
-         sink      (:sink   options (async/chan))
-         stream    {:socket socket :source source :sink sink}]
-     (set! (.-binaryType socket) (name (:binary-type options :arraybuffer)))
-     (set! (.-onopen socket)     (fn [_] (go-loop []
-                                           (when-let [msg (<! sink)]
-                                             (.send socket msg)
-                                             (recur)))))
-     (set! (.-onmessage socket)  (fn [e] (async/put! source (.-data e))))
-     (set! (.-onclose socket)    (fn [e]
-                                   (async/put! source :drained)
-                                   (async/close! source)
-                                   (async/close! sink)))
-     stream)))
+(defn connect!
+  "Create a WebSocket to the specified URL"
+  [url on-open on-message on-close]
+  (let [socket (js/WebSocket. url)]
+    (set! (.-binaryType socket) "arraybuffer")
+    (set! (.-onopen socket)     on-open)
+    (set! (.-onmessage socket)  on-message)
+    (set! (.-onclose socket)    on-close)
+    socket))
 
-(defn close
+(defn close!
   "Close a stream opened by connect."
-  [stream]
-  (.close (:socket stream))
-  (:close-status stream))
+  [socket]
+  (.close socket))
+
+(defn put!
+  "Sends a message along this socket."
+  ([socket msg] (put! socket msg 1))
+  ([socket msg attempt]
+   (let [state (.-readyState socket)]
+     (when (> attempt 10)
+       (throw (ex-info "put! failed" {:socket socket :msg msg :attempt attempt})))
+     (cond
+       (= state js/WebSocket.CONNECTING) (js/setTimeout #(put! socket msg (inc attempt)) (* attempt 100))
+       (= state js/WebSocket.OPEN)       (.send socket msg)
+       (= state js/WebSocket.CLOSED)     (throw (ex-info "Attempted put! on a closed socket" {:socket socket}))
+       (= state js/WebSocket.CLOSING)    (throw (ex-info "Attempted put! on a closing socket" {:socket socket}))
+       :else                             (js/setTimeout #(put! socket msg (inc attempt)) (* attempt 100))))))

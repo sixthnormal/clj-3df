@@ -13,7 +13,7 @@
 (comment
 
   (do
-    (def conn (df/create-debug-conn "ws://127.0.0.1:6262"))
+    (def conn (df/create-debug-conn! "ws://127.0.0.1:6262"))
     (exec! conn (df/create-db-inputs db)))
 
   (exec! conn

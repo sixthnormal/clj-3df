@@ -8,19 +8,25 @@
 ;; deviating from their settings.
 
 (def schema
-  {:settings/speed {:db/valueType :Number}
-   :device/speed   {:db/valueType :Number}})
+  {:settings/speed {:db/valueType :Number
+                    :db/semantics :db.semantics.cardinality/one}
+   :device/name    {:db/valueType :String}
+   :device/speed   {:db/valueType :Number
+                    :db/semantics :db.semantics.cardinality/one}})
 
 (def db (df/create-db schema))
 
 (comment
 
-  (do
-    (def conn (df/create-debug-conn "ws://127.0.0.1:6262"))
-    (exec! conn (df/create-db-inputs db)))
+  (def conn
+    (df/create-debug-conn! "ws://127.0.0.1:6262"))
 
   (exec! conn
-    (df/transact db [[:db/add 111 :settings/speed 100]]))
+    (df/create-db-inputs db)
+    (df/transact db [[:db/add 111 :device/name "dev0"]
+                     [:db/add 111 :settings/speed 100]
+                     [:db/add 222 :device/name "dev1"]
+                     [:db/add 222 :settings/speed 130]]))
 
   (exec! conn
     (df/query
@@ -36,19 +42,31 @@
 
   (exec! conn
     (df/query
-     db "deviating"
-     '[:find ?device ?deviation
+     db "devicemgr/deviating"
+     '[:find ?device
        :where
        [?device :settings/speed ?target]
        [?device :device/speed ?speed]
-       [(< ?speed ?target)]
+       [(< ?speed ?target)]]))
+
+  (exec! conn
+    (df/query
+     db "devicemgr/alerts"
+     '[:find ?device ?name ?deviation
+       :where
+       (devicemgr/deviating ?device)
+       [?device :device/name ?name]
+       [?device :settings/speed ?target]
+       [?device :device/speed ?speed]
        [(subtract ?target ?speed) ?deviation]]))
 
   (exec! conn
-    (df/transact db [[:db/add 111 :device/speed 50]]))
+    (df/transact db [[:db/add 111 :device/speed 87]]))
 
   (exec! conn
-    (df/transact db [[:db/retract 111 :device/speed 50]
-                     [:db/add 111 :device/speed 75]]))
+    (df/transact db [[:db/add 222 :device/speed 120]]))
+
+  (exec! conn
+    (df/uninterest "current-settings"))
 
   )

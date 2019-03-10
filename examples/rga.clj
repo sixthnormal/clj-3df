@@ -1,7 +1,7 @@
 (ns rga
   (:require
    [clojure.pprint :as pprint]
-   [clj-3df.core :refer [create-conn create-db exec! query transact]]
+   [clj-3df.core :refer [create-conn! create-db exec! query transact]]
    [manifold.stream :as stream]
    [manifold.bus :as bus])
   (:gen-class))
@@ -103,7 +103,7 @@
 ;; test
 
 (defn -main []
-  (def conn (create-conn "ws://127.0.0.1:6262"))
+  (def conn (create-conn! "ws://127.0.0.1:6262"))
   (stream/consume #(pprint/pprint %) (bus/subscribe (:out conn) :out))
 
   (exec! conn

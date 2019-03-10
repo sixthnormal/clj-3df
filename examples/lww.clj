@@ -1,7 +1,7 @@
 (ns lww
   (:require
    [clojure.pprint :as pprint]
-   [clj-3df.core :refer [create-conn create-db exec! query transact] :as df])
+   [clj-3df.core :refer [create-conn! create-db exec! query transact] :as df])
   (:gen-class))
 
 ;; LWW Register
@@ -48,7 +48,7 @@
 ;; test
 
 (defn -main []
-  (def conn (df/create-debug-conn "ws://127.0.0.1:6262"))
+  (def conn (df/create-debug-conn! "ws://127.0.0.1:6262"))
 
   (exec! conn (df/create-db-inputs db))
 

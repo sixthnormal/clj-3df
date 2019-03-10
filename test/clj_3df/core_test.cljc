@@ -2,15 +2,11 @@
   (:require
    #?(:clj  [clojure.test :refer [deftest is testing run-tests]]
       :cljs [cljs.test :refer-macros [deftest is testing run-tests]])
-   #?(:clj  [clojure.core.async :as async :refer [<! >! go-loop]]
-      :cljs [cljs.core.async :as async :refer [<! >!]])
-   [clj-3df.core :as df :refer [exec! create-db-inputs create-debug-conn query register interest transact]])
-  #?(:cljs (:require-macros [clj-3df.core :refer [exec!]]
-                            [cljs.core.async :refer [go-loop]])))
-
+   [clj-3df.core :as df :refer [exec! create-debug-conn!
+                                create-db-inputs query register interest transact]]))
 
 (defn- debug-conn []
-  (let [conn (create-debug-conn "ws://127.0.0.1:6262")]
+  (let [conn (create-debug-conn! "ws://127.0.0.1:6262")]
     conn))
 
 (comment
