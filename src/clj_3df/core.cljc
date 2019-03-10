@@ -107,10 +107,8 @@
     (register-query db name q rules)
     (interest name))))
 
-(defn register-source [names source]
-  [{:RegisterSource
-    {:names  (mapv encode/encode-keyword names)
-     :source source}}])
+(defn register-source [source]
+  [{:RegisterSource source}])
 
 (defn register-sink [name sink]
   [{:RegisterSink
@@ -119,8 +117,9 @@
 
 (defn create-attribute [attr semantics]
   [{:CreateAttribute
-    {:name      (encode/encode-keyword attr)
-     :semantics (encode/encode-semantics semantics)}}])
+    {:name   (encode/encode-keyword attr)
+     :config {:trace_slack     {:TxId 1}
+              :input_semantics (encode/encode-semantics semantics)}}}])
 
 (defn create-db-inputs [^DB db]
   (->> (seq (.-schema db))
@@ -129,7 +128,7 @@
                    (create-attribute name semantics))))))
 
 (defn advance-domain [next-t]
-  [{:AdvanceDomain [nil next-t]}])
+  [{:AdvanceDomain [nil {:TxId next-t}]}])
 
 (defn close-input [attr]
   [{:CloseInput (encode/encode-keyword attr)}])
