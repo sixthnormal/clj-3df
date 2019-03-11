@@ -12,7 +12,15 @@
    :timely.event.channels/src-index    {:db/valueType :Eid}
    :timely.event.channels/src-port     {:db/valueType :Eid}
    :timely.event.channels/target-index {:db/valueType :Eid}
-   :timely.event.channels/target-port  {:db/valueType :Eid}})
+   :timely.event.channels/target-port  {:db/valueType :Eid}
+
+   :differential.event/size {:db/valueType :Number}})
+
+(defn timely? [kw]
+  (clojure.string/starts-with? (namespace kw) "timely"))
+
+(defn differential? [kw]
+  (clojure.string/starts-with? (namespace kw) "differential"))
 
 (def db (df/create-db schema))
 
@@ -23,7 +31,12 @@
   (exec! conn
     (df/register-source
      {:TimelyLogging
-      {:attributes (into [] (keys schema))}}))
+      {:attributes (into [] (filter timely?) (keys schema))}}))
+
+  (exec! conn
+    (df/register-source
+     {:DifferentialLogging
+      {:attributes (into [] (filter differential?) (keys schema))}}))
 
   (exec! conn
     (df/query
