@@ -251,7 +251,12 @@
                               (let [data (parse-result (.-data e))]
                                 (let [listeners @(.-listeners conn)]
                                   (doseq [listener (vals listeners)]
-                                    (apply listener [data])))))
+                                    (apply listener [data])))
+                                (let [[query diff]    data
+                                      query-listeners @(.-query-listeners conn)
+                                      listeners       (get query-listeners query [])]
+                                  (doseq [listener (vals listeners)]
+                                    (apply listener [diff])))))
                  on-close   (fn [_] (println "Socket closed"))]
              (assoc conn
                     :ws (socket/connect! url on-open on-message on-close)))))
