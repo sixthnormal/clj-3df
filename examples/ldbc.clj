@@ -1,10 +1,14 @@
 (ns clj-3df.ldbc
   (:require
    [clj-3df.core :as df :refer [exec!]]
+   [clj-3df.attribute :as attribute]
+   [clj-3df.time :as time]
    [clj-3df.binding :as binding]))
 
 (def schema
-  {:comment/creation-date  {:db/valueType :String}
+  {:differential.event/size {:db/valueType :Number}
+   
+   :comment/creation-date  {:db/valueType :String}
    :comment/ip             {:db/valueType :String}
    :comment/browser        {:db/valueType :String}
    :comment/content        {:db/valueType :String}

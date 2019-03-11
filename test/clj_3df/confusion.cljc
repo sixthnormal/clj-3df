@@ -1,9 +1,7 @@
 (ns clj-3df.confusion
   (:require
-   [clj-3df.core :refer [create-db create-attribute
-                         debug-conn
-                         register-source query
-                         exec! transact]]))
+   [clj-3df.core :refer [create-debug-conn! create-db create-attribute register-source query exec! transact]]
+   [clj-3df.attribute :as attribute]))
 
 (def schema
   {:target  {:db/valueType :String}
@@ -11,16 +9,19 @@
    :country {:db/valueType :String}
 
    ;; wip
-   :q1-country {:db/valueType :String}})
+   :q1-country (merge
+                (attribute/of-type :String)
+                (attribute/input-semantics :db.semantics.cardinality/many)
+                (attribute/tx-time))})
 
 (def db (create-db schema))
 
 (comment
 
-  (def conn (debug-conn "ws://127.0.0.1:6262"))
+  (def conn (create-debug-conn! "ws://127.0.0.1:6262"))
 
   (exec! conn
-    (create-attribute :q1-country :db.semantics.cardinality/many)
+    (create-attribute :q1-country (get schema :q1-country))
     (register-source
      [:target :guess :country]
      {:JsonFile {:path "./data/confusion/xaa"}}))

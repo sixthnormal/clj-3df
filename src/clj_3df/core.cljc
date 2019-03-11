@@ -11,6 +11,7 @@
    [clojure.string :as str]
    [clojure.set :as set]
    [clj-3df.compiler :as compiler]
+   [clj-3df.attribute :as attribute]
    [clj-3df.encode :as encode]))
 
 ;; HELPER
@@ -111,20 +112,25 @@
     {:name name
      :sink sink}}])
 
-(defn create-attribute [attr semantics]
+(defn create-attribute
+  "Creates a CreateAttribute command with the provided
+  configuration. The various ways to configure attributes are defined
+  in the `clj-3df.attribute` namespace."
+  [attr config]
   [{:CreateAttribute
     {:name   (encode/encode-keyword attr)
-     :config {:trace_slack     {:TxId 1}
-              :input_semantics (encode/encode-semantics semantics)}}}])
+     :config (select-keys config [:input_semantics :trace_slack])}}])
 
 (defn create-db-inputs [^DB db]
   (->> (seq (.-schema db))
-       (mapcat (fn [[name properties]]
-                 (let [semantics (get properties :db/semantics :db.semantics/raw)]
-                   (create-attribute name semantics))))))
+       (mapcat (fn [[name config]]
+                 (create-attribute name config)))))
 
-(defn advance-domain [next-t]
-  [{:AdvanceDomain [nil {:TxId next-t}]}])
+(defn advance-domain
+  "Creates an AdvanceDomain command to the specified next timestamp. The
+  timestamp must match the time domain of the server."
+  [next-t]
+  [{:AdvanceDomain [nil next-t]}])
 
 (defn close-input [attr]
   [{:CloseInput (encode/encode-keyword attr)}])

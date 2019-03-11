@@ -1,9 +1,8 @@
 (ns clj-3df.capm
   (:require
-   [clj-3df.core :refer [create-db create-attribute
-                         debug-conn
-                         register-source query
-                         exec! transact]]))
+   [clj-3df.attribute :as attribute]
+   [clj-3df.core :refer [exec! create-debug-conn! create-db create-attribute
+                         register-source query transact]]))
 
 (def schema
   {:user      {:db/valueType :Number}
@@ -11,7 +10,10 @@
    :link/uri  {:db/valueType :String}
 
    ;; wip
-   :apu/user {:db/valueType :Number}})
+   :apu/user (merge
+              (attribute/of-type :Number)
+              (attribute/input-semantics :db.semantics.cardinality/many)
+              (attribute/tx-time))})
 
 (def db (create-db schema))
 
@@ -20,7 +22,7 @@
   (def conn (debug-conn "ws://127.0.0.1:6262"))
 
   (exec! conn
-    (create-attribute :apu/user :db.semantics.cardinality/many)
+    (create-attribute :apu/user (get schema :apu/user))
     (transact db [[:db/add 999999 :apu/user 3]]))
 
   (exec! conn

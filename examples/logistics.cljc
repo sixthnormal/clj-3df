@@ -1,20 +1,45 @@
 (ns logistics
   (:require
-   [clj-3df.core :as df :use [exec!]]))
+   [clj-3df.core :as df :use [exec!]]
+   [clj-3df.attribute :as attribute]))
 
 (def schema
   {;; shipments
-   :shipment/payload {:db/valueType :String}
-   :shipment/value   {:db/valueType :Number}
-   :shipment/dest    {:db/valueType :Number}
-   :shipment/pos     {:db/valueType :Number}
+   :shipment/payload (merge
+                      (attribute/of-type :String)
+                      (attribute/input-semantics :db.semantics.cardinality/many)
+                      (attribute/tx-time))
+   :shipment/value   (merge
+                      (attribute/of-type :Number)
+                      (attribute/input-semantics :db.semantics.cardinality/many)
+                      (attribute/tx-time))
+   :shipment/dest    (merge
+                      (attribute/of-type :Number)
+                      (attribute/input-semantics :db.semantics.cardinality/many)
+                      (attribute/tx-time))
+   :shipment/pos     (merge
+                      (attribute/of-type :Number)
+                      (attribute/input-semantics :db.semantics.cardinality/many)
+                      (attribute/tx-time))
    ;; ports
-   :port/id          {:db/valueType :Number}
+   :port/id          (merge
+                      (attribute/of-type :Number)
+                      (attribute/input-semantics :db.semantics.cardinality/many)
+                      (attribute/tx-time))
    ;; connections
-   :conn/from        {:db/valueType :Number}
-   :conn/to          {:db/valueType :Number}
+   :conn/from        (merge
+                      (attribute/of-type :Number)
+                      (attribute/input-semantics :db.semantics.cardinality/many)
+                      (attribute/tx-time))
+   :conn/to          (merge
+                      (attribute/of-type :Number)
+                      (attribute/input-semantics :db.semantics.cardinality/many)
+                      (attribute/tx-time))
    ;; user control handle
-   :control/ports    {:db/valueType :Number}})
+   :control/ports    (merge
+                      (attribute/of-type :Number)
+                      (attribute/input-semantics :db.semantics.cardinality/many)
+                      (attribute/tx-time))})
 
 (def db (df/create-db schema))
 
@@ -61,14 +86,14 @@
 
     (exec! conn
       ;; 'manual' inputs
-      (df/create-attribute :shipment/payload :db.cardinality/many)
-      (df/create-attribute :shipment/value :db.cardinality/many)
-      (df/create-attribute :shipment/dest :db.cardinality/many)
-      (df/create-attribute :shipment/pos :db.cardinality/many)
-      (df/create-attribute :port/id :db.cardinality/many)
-      (df/create-attribute :conn/from :db.cardinality/many)
-      (df/create-attribute :conn/to :db.cardinality/many)
-      (df/create-attribute :control/ports :db.cardinality/many))
+      (df/create-attribute :shipment/payload (get schema :shipment/payload))
+      (df/create-attribute :shipment/value (get schema :shipment/value))
+      (df/create-attribute :shipment/dest (get schema :shipment/dest))
+      (df/create-attribute :shipment/pos (get schema :shipment/pos))
+      (df/create-attribute :port/id (get schema :port/id))
+      (df/create-attribute :conn/from (get schema :conn/from))
+      (df/create-attribute :conn/to (get schema :conn/to))
+      (df/create-attribute :control/ports (get schema :control/ports)))
 
     (exec! conn
       (df/query db "logistics/finished"
