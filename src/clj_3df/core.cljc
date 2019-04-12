@@ -187,10 +187,9 @@
 
 (defn parse-result
   [result]
-  (let [unwrap-type  (fn [boxed] (second (first boxed)))
-        unwrap-tuple (fn [[tuple time diff :as result-diff]]
+  (let [unwrap-tuple (fn [[tuple time diff :as result-diff]]
                        (if (vector? tuple)
-                         [(mapv unwrap-type tuple) time diff]
+                         [tuple time diff]
                          result-diff))
         xf-batch     (map unwrap-tuple)]
     (let [[query_name results] (parse-json result)]
