@@ -9,6 +9,7 @@
    :timely.event.operates/local-id     {:db/valueType :Eid}
    :timely.event.operates/name         {:db/valueType :String}
    :timely.event.operates/address      {:db/valueType :Address}
+   :timely.event.operates/shutdown?    {:db/valueType :Bool}
    :timely.event.channels/src-index    {:db/valueType :Eid}
    :timely.event.channels/src-port     {:db/valueType :Eid}
    :timely.event.channels/target-index {:db/valueType :Eid}
@@ -40,6 +41,14 @@
 
   (exec! conn
     (df/query
+     db "differential/tuples"
+     '[:find (sum ?size)
+       :where
+       [?x :differential.event/size ?size]
+       (not [?x :timely.event.operates/shutdown? true])]))
+
+  (exec! conn
+    (df/query
      db "timely/channels"
      '[:find ?x ?scope ?src-index ?src-port ?target-index ?target-port
        :where
@@ -59,6 +68,16 @@
        [?x :timely.event.operates/name ?name]]))
 
   (exec! conn
-    (df/uninterest "timely/graph"))
+    (df/query
+     db "timely/operates"
+     '[:find ?x ?name :where [?x :timely.event.operates/name ?name]]))
+
+  (exec! conn
+    (df/query
+     db "timely/shutdown"
+     '[:find ?x :where [?x :timely.event.operates/shutdown? true]]))
+
+  (exec! conn
+    (df/uninterest "timely/operates"))
   
   )
