@@ -42,8 +42,8 @@
 
 (comment
 
-  (def conn
-    (df/create-debug-conn! "ws://127.0.0.1:6262"))
+  ;; (def conn (df/create-debug-conn! "ws://127.0.0.1:6262"))
+  (def conn (df/create-debug-conn! "ws://caliban.c.clockworks.io:6262"))
 
   (exec! conn
     (concat
@@ -55,8 +55,8 @@
         [?device :device/speed ?speed]
         [?tenant :param/device ?device]])
      [{:Interest {:name        "current-speed"
-                  :tenant      0
-                  :sink        {:TheVoid "/Users/niko/data/results/reuse/times.csv"}
+                  ;; :tenant 0
+                  ;; :sink {:TheVoid "/Users/niko/data/results/reuse/times.csv"}
                   :granularity 1}}]
      (df/transact db [[:db/add 0 :param/device 111]])))
 

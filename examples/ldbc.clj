@@ -6,7 +6,18 @@
    [clj-3df.binding :as binding]))
 
 (def schema
-  {:differential.event/size {:db/valueType :Number}
+  {:timely/scope {:db/valueType :Eid}
+
+   :timely.event.operates/local-id     {:db/valueType :Eid}
+   :timely.event.operates/name         {:db/valueType :String}
+   :timely.event.operates/address      {:db/valueType :Address}
+   :timely.event.operates/shutdown?    {:db/valueType :Bool}
+   :timely.event.channels/src-index    {:db/valueType :Eid}
+   :timely.event.channels/src-port     {:db/valueType :Eid}
+   :timely.event.channels/target-index {:db/valueType :Eid}
+   :timely.event.channels/target-port  {:db/valueType :Eid}
+
+   :differential.event/size {:db/valueType :Number}
    
    :comment/creation-date  {:db/valueType :String}
    :comment/ip             {:db/valueType :String}
@@ -88,85 +99,13 @@
                               (attribute/input-semantics :db.semantics.cardinality/many)
                               (attribute/real-time))})
 
+(defn timely? [kw]
+  (clojure.string/starts-with? (namespace kw) "timely"))
+
+(defn differential? [kw]
+  (clojure.string/starts-with? (namespace kw) "differential"))
+
 (def db (df/create-db schema))
-
-(def friends-with-certain-name
-  '[:find (count ?other)
-    ;; ?other ?lastname ?birthday ?created ?gender ?browser ?ip
-    ;; ?city
-    ;; ?uni-name ?class-year ?uni-city
-    ;; ?company-name ?work-from ?country-name
-    :where    
-    [?other :person/lastname ?lastname]
-    ;; [?other :person/birthday ?birthday]
-    ;; [?other :person/creation-date ?created]
-    ;; [?other :person/gender ?gender]
-    ;; [?other :person/browser ?browser]
-    ;; [?other :person/ip ?ip]
-    
-    [?other :person/place ?place]
-    [?place :place/name ?city]
-
-    [?studies :study-at/person ?other]
-    ;; [?studies :study-at/class-year ?class-year]
-    [?studies :study-at/organisation ?uni]
-    [?uni :organisation/name ?uni-name]
-    ;; [?uni :organisation/place ?uni-place]
-    ;; [?uni-place :place/name ?uni-city]
-
-    [?works :work-at/person ?other]
-    [?works :work-at/organisation ?company]
-    ;; [?works :work-at/work-from ?work-from]
-    [?company :organisation/name ?company-name]
-    ;; [?company :organisation/place ?company-place]
-    ;; [?company-place :place/part-of ?country]
-    ;; [?country :place/name ?country-name]
-
-    [?param0 :input.selector/person ?person]
-    [?param1 :input.selector/firstname ?firstname]
-    [?person :person/knows-person ?other]
-    [?other :person/firstname ?firstname]
-    ])
-
-(clj-3df.compiler/compile-query friends-with-certain-name)
-
-(def friends-with-certain-name-wco
-  {:Hector
-   {:variables
-    '[?other ?lastname ?birthday ?created ?gender ?browser ?ip
-      ?city
-      ?uni-name ?class-year ?uni-city
-      ?company-name ?work-from ?country-name]
-    :bindings
-    [(binding/attribute '[?param0 :input.selector/person ?person])
-     (binding/attribute '[?param1 :input.selector/firstname ?firstname])
-     (binding/attribute '[?person :person/knows-person ?other])
-     (binding/attribute '[?other :person/firstname ?firstname])
-     
-     (binding/attribute '[?other :person/lastname ?lastname])
-     (binding/attribute '[?other :person/birthday ?birthday])
-     (binding/attribute '[?other :person/creation-date ?created])
-     (binding/attribute '[?other :person/gender ?gender])
-     (binding/attribute '[?other :person/browser ?browser])
-     (binding/attribute '[?other :person/ip ?ip])
-     
-     (binding/attribute '[?other :person/place ?place])
-     (binding/attribute '[?place :place/name ?city])
-
-     (binding/attribute '[?studies :study-at/person ?other])
-     (binding/attribute '[?studies :study-at/class-year ?class-year])
-     (binding/attribute '[?studies :study-at/organisation ?uni])
-     (binding/attribute '[?uni :organisation/name ?uni-name])
-     (binding/attribute '[?uni :organisation/place ?uni-place])
-     (binding/attribute '[?uni-place :place/name ?uni-city])
-
-     (binding/attribute '[?works :work-at/person ?other])
-     (binding/attribute '[?works :work-at/organisation ?company])
-     (binding/attribute '[?works :work-at/work-from ?work-from])
-     (binding/attribute '[?company :organisation/name ?company-name])
-     (binding/attribute '[?company :organisation/place ?company-place])
-     (binding/attribute '[?company-place :place/part-of ?country])
-     (binding/attribute '[?country :place/name ?country-name])]}})
 
 (def ldbc-defaults
   {:has_headers true
@@ -174,7 +113,8 @@
    :comment     nil
    :flexible    false})
 
-(def dataset-path "/Users/niko/data/social_network/")
+;; (def dataset-path "/Users/niko/data/social_network/")
+  (def dataset-path "/opt/docker/volumes/ldbc/10k/")
 
 (def encode-type
   {:String {:String ""}
@@ -485,7 +425,8 @@
   ;; 3. Load Dataset.
   ;; 4. Execute a simple query to advance traces.
   
-  (def conn (df/create-debug-conn! "ws://127.0.0.1:6262"))
+  ;; (def conn (df/create-debug-conn! "ws://127.0.0.1:6262"))
+  (def conn (df/create-debug-conn! "ws://caliban.c.clockworks.io:6262"))
 
   (exec! conn
     (concat
@@ -493,13 +434,22 @@
      (df/create-attribute :input.selector/firstname (get schema :input.selector/firstname))
 
      (df/register-source
+      {:TimelyLogging
+       {:attributes (into [] (filter timely?) (keys schema))}})
+     
+     (df/register-source
       {:DifferentialLogging
        {:attributes [:differential.event/size]}})
 
-     (df/query
+     (df/register-query
       db "differential/tuples"
-      '[:find (sum ?size)
-        :where [?x :differential.event/size ?size]])))
+      '[:find #_?name (sum ?size)
+        :where
+        [?operator :differential.event/size ?size]
+        #_[?operator :timely.event.operates/name ?name]])
+     [{:Interest {:name            "differential/tuples"
+                  :granularity     10
+                  :disable_logging true}}]))
 
   (exec! conn
     (df/register-source
@@ -508,15 +458,16 @@
   (exec! conn
     (let [attributes [nil :person/firstname :person/lastname :person/gender :person/birthday :person/creation-date :person/ip :person/browser]]
       (df/register-source {:CsvFile (merge ldbc-defaults
-                                           {:path       (str dataset-path "person.csv")
+                                           {:path       (str dataset-path "person_0_0.csv")
                                             :eid_offset 0
-                                            ;; :timestamp_offset 5
                                             :schema     (source-schema attributes)})})))
   
   (load-dataset! conn)
 
   (exec! conn
-    (df/query db "purge" '[:find (count ?x) :where [?x :person/browser "Firefox"]]))
+    (df/query
+     db (name (gensym "purge"))
+     '[:find (count ?x) :where [?x :person/browser ?y]]))
 
   (exec! conn
     (let [name (name (gensym "purge-hector"))]
@@ -526,17 +477,18 @@
         db name
         {:Hector
          {:variables '[?gender #_?bday ?firstname ?browser]
-          :bindings [(binding/attribute '[?person :person/gender ?gender])
-                     #_(binding/attribute '[?person :person/birthday ?bday])
-                     (binding/attribute '[?person :person/firstname ?firstname])
-                     (binding/attribute '[?person :person/browser ?browser])
-                     (binding/constant '[?firstname "Anastasia"])]}}
+          :bindings  [(binding/attribute '[?person :person/gender ?gender])
+                      #_(binding/attribute '[?person :person/birthday ?bday])
+                      (binding/attribute '[?person :person/firstname ?firstname])
+                      (binding/attribute '[?person :person/browser ?browser])
+                      (binding/constant '[?firstname "Anastasia"])]}}
         [])
        [{:Interest {:name name}}])))
 
   (exec! conn
     (df/uninterest "purge"))
-  
+  (* 9892 7)
+  ;; => 69244
   )
 
 
@@ -564,7 +516,8 @@
           [?post :post/tag ?tag]
           [?tag :tag/name ?tag-name]])
        [{:Interest {:name name
-                    :sink {:TheVoid "/Users/niko/data/results/joinorder/bi_read_2_join.csv"}}}])))
+                    :sink {:TheVoid "/home/niko/results/joinorder/bi2_join.csv"}
+                    #_:sink #_{:TheVoid "/Users/niko/data/results/joinorder/bi_read_2_join.csv"}}}])))
 
   (exec! conn
     (let [name (name (gensym "bi-read-2-bad-order"))]
@@ -583,7 +536,8 @@
           [?person :person/place ?city]
           [?country :place/name ?country-name]])
        [{:Interest {:name name
-                    :sink {:TheVoid "/Users/niko/data/results/joinorder/bi_read_2_join_bad_order.csv"}}}])))
+                    :sink {:TheVoid "/home/niko/results/joinorder/bi2_join2.csv"}
+                    #_:sink #_{:TheVoid "/Users/niko/data/results/joinorder/bi_read_2_join_bad_order.csv"}}}])))
 
   (exec! conn
     (let [name (name (gensym "bi-read-2-hector"))]
@@ -603,7 +557,8 @@
                       (binding/attribute '[?country :place/name ?country-name])]}}
         [])
        [{:Interest {:name name
-                    :sink {:TheVoid "/Users/niko/data/results/joinorder/bi_read_2_hector.csv"}}}])))
+                    :sink {:TheVoid "/home/niko/results/joinorder/bi2_hector.csv"}
+                    #_:sink #_{:TheVoid "/Users/niko/data/results/joinorder/bi_read_2_hector.csv"}}}])))
   
   )
 
@@ -626,7 +581,24 @@
           [?post :post/language ?language]
           [?post :post/content ?content]])
        [{:Interest {:name name
-                    :sink {:TheVoid "/Users/niko/data/results/joinorder/best_case.csv"}}}])))
+                    :sink {:TheVoid "/home/niko/results/joinorder/best_case.csv"}
+                    #_:sink #_{:TheVoid "/Users/niko/data/results/joinorder/best_case.csv"}}}])))
+
+  (exec! conn
+    (let [name (name (gensym "best-case-reorder"))]
+      (println name)
+      (concat
+       (df/register-query
+        db name
+        '[:find ?post ?ip ?browser ?language ?content
+          :where
+          [?post :post/content ?content]
+          [?post :post/language ?language]
+          [?post :post/browser ?browser]
+          [?post :post/ip ?ip]])
+       [{:Interest {:name name
+                    :sink {:TheVoid "/home/niko/results/joinorder/best_case_reorder.csv"}
+                    #_:sink #_{:TheVoid "/Users/niko/data/results/joinorder/best_case_reorder.csv"}}}])))
 
   (exec! conn
     (let [name (name (gensym "best-case-hector"))]
@@ -642,7 +614,8 @@
                       (binding/attribute '[?post :post/content ?content])]}}
         [])
        [{:Interest {:name name
-                    :sink {:TheVoid "/Users/niko/data/results/joinorder/best_case_hector.csv"}}}])))
+                    :sink {:TheVoid "/home/niko/results/joinorder/best_case_hector.csv"}
+                    #_:sink #_{:TheVoid "/Users/niko/data/results/joinorder/best_case_hector.csv"}}}])))
   
   )
 
@@ -658,16 +631,15 @@
       (concat
        (df/register-query
         db name
-        '[:find ?comment
+        '[:find ?person
           :where
-          [?comment :comment/creation-date ?creationDate]
-          [?comment :comment/creator ?person]
-          [?comment :comment/ip ?ip]
-          [?comment :comment/browser ?browser]
-          [?comment :comment/content ?content]
-          [?comment :comment/place ?place]
-          [?comment :comment/parent-comment ?parent-comment]
-          [?comment :comment/parent-post ?parent-post]
+          [?person :person/firstname ?a]
+          [?person :person/lastname ?b]
+          ;; [?person :person/gender ?c]
+          ;; [?person :person/birthday ?d]
+          ;; [?person :person/creation-date ?e]
+          ;; [?person :person/ip ?f]
+          ;; [?person :person/browser ?g]
           ])
        [{:Interest {:name name
                     :sink {:TheVoid "/Users/niko/data/results/joinstate/join.csv"}}}])))
@@ -678,18 +650,18 @@
        (df/register
         db name
         {:Hector
-         {:variables '[?comment]
-          :bindings  [(binding/attribute '[?comment :comment/creation-date ?creationDate])
-                      (binding/attribute '[?comment :comment/creator ?person])
-                      (binding/attribute '[?comment :comment/ip ?ip])
-                      (binding/attribute '[?comment :comment/browser ?browser])
-                      (binding/attribute '[?comment :comment/content ?content])
-                      (binding/attribute '[?comment :comment/place ?place])
-                      (binding/attribute '[?comment :comment/parent-post ?parent-post ""])
-                      (binding/attribute '[?comment :comment/parent-comment ?parent-comment ""])]}}
-        []))
-      [{:Interest {:name name
-                   :sink {:TheVoid "/Users/niko/data/results/joinstate/delta.csv"}}}]))
+         {:variables '[?person]
+          :bindings  [(binding/attribute '[?person :person/firstname ?a])
+                      (binding/attribute '[?person :person/lastname ?b])
+                      (binding/attribute '[?person :person/gender ?c])
+                      (binding/attribute '[?person :person/birthday ?d])
+                      (binding/attribute '[?person :person/creation-date ?e])
+                      ;; (binding/attribute '[?person :person/ip ?f])
+                      ;; (binding/attribute '[?person :person/browser ?g])
+                      ]}}
+        [])
+       [{:Interest {:name name
+                    :sink {:TheVoid "/Users/niko/data/results/joinstate/delta.csv"}}}])))
 
   )
 
