@@ -119,7 +119,8 @@
   [attr config]
   [{:CreateAttribute
     {:name   (encode/encode-keyword attr)
-     :config (select-keys config [:input_semantics :trace_slack])}}])
+     :config (merge (select-keys config [:input_semantics :trace_slack])
+                    {:timeless true})}}])
 
 (defn create-db-inputs [^DB db]
   (->> (seq (.-schema db))
