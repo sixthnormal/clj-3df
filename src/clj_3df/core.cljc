@@ -185,15 +185,28 @@
                            [] tx-data)]
      [{:Transact tx-data}])))
 
+(defmulti parse-output
+  (fn [x] (first (keys x))))
+
+(defmethod parse-output "Error" [result]
+  (let [[client error tx-id] (get result "Error")]
+    ["Error" (merge {"df.client" client} error {"df.tx-id" tx-id})]))
+
+(defmethod parse-output "Message" [result]
+  (let [[client value] (get result "Message")]
+    ["Message" (merge {"df.client" client} value)]))
+
+(defmethod parse-output "Json" [result]
+  (let [[query-name value time diff] (get result "Json")]
+     [query-name value time diff]))
+
+(defmethod parse-output "QueryDiff" [result]
+  (let [[query-name results] (get result "QueryDiff")]
+    [query-name results]))
+
 (defn parse-result
   [result]
-  (let [unwrap-tuple (fn [[tuple time diff :as result-diff]]
-                       (if (vector? tuple)
-                         [tuple time diff]
-                         result-diff))
-        xf-batch     (map unwrap-tuple)]
-    (let [[query_name results] (parse-json result)]
-      [query_name (into [] xf-batch results)])))
+  (parse-output (parse-json result)))
 
 (defrecord Connection [ws listeners query-listeners])
 
