@@ -10,6 +10,7 @@
    [clojure.pprint :as pprint]
    [clojure.string :as str]
    [clojure.set :as set]
+   [clojure.walk :refer [keywordize-keys]]
    [clj-3df.compiler :as compiler]
    [clj-3df.attribute :refer [of-type input-semantics tx-time]]
    [clj-3df.encode :as encode]))
@@ -202,8 +203,11 @@
      [query-name value time diff]))
 
 (defmethod parse-output "QueryDiff" [result]
-  (let [[query-name results] (get result "QueryDiff")]
-    [query-name results]))
+  (let [[query-name results] (get result "QueryDiff")
+        keywordize           (fn [v] (map keywordize-keys v))
+        result               (->> results
+                                  (map keywordize))]
+    [query-name result]))
 
 (defn parse-result
   [result]
@@ -356,10 +360,10 @@
    conn "loans>50"
    (fn [diffs]
      (println "executing rule loans>50" diffs)
-     (doseq [[[id amount] op] diffs]
+     (doseq [[[id amount] t op] diffs]
        (when (pos? op)
-         (exec! conn (transact db [[:db/retract id :loan/over-50 false]]))
-         (exec! conn (transact db [[:db/add id :loan/over-50 (> amount 50)]]))))))
+         (exec! conn (transact db [[:db/retract (encode/decode-value id) :loan/over-50 false]]))
+         (exec! conn (transact db [[:db/add (encode/decode-value id) :loan/over-50 (> (encode/decode-value amount) 50)]]))))))
 
   (exec! conn
     (transact db [{:db/id        2
