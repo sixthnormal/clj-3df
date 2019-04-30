@@ -166,8 +166,6 @@
                      (case op
                        :db/add     1
                        :db/retract -1))
-         tx-time   (fn [t]
-                     (or (first t) nil))
          wrap-type (fn [a v]
                      (let [type (get-in schema [a :db/valueType] :db.type/unknown)]
                        (if (= type :db.type/unknown)
@@ -183,8 +181,8 @@
                                     (into tx-data))
 
                                (sequential? datum)
-                               (let [[op e a v & t] datum]
-                                 (conj tx-data [(op->diff op) e (encode/encode-keyword a) (wrap-type a v) (tx-time t)]))))
+                               (let [[op e a v t] datum]
+                                 (conj tx-data [(op->diff op) e (encode/encode-keyword a) (wrap-type a v) t]))))
                            [] tx-data)]
      [{:Transact tx-data}])))
 
