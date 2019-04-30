@@ -10,8 +10,9 @@
    [clojure.pprint :as pprint]
    [clojure.string :as str]
    [clojure.set :as set]
+   [clojure.walk :refer [keywordize-keys]]
    [clj-3df.compiler :as compiler]
-   [clj-3df.attribute :as attribute]
+   [clj-3df.attribute :refer [of-type input-semantics tx-time]]
    [clj-3df.encode :as encode]))
 
 ;; HELPER
@@ -119,7 +120,8 @@
   [attr config]
   [{:CreateAttribute
     {:name   (encode/encode-keyword attr)
-     :config (select-keys config [:input_semantics :trace_slack])}}])
+     :config (merge (select-keys config [:input_semantics :trace_slack])
+                    {:timeless true})}}])
 
 (defn create-db-inputs [^DB db]
   (->> (seq (.-schema db))
@@ -180,20 +182,36 @@
                                     (into tx-data))
 
                                (sequential? datum)
-                               (let [[op e a v] datum]
-                                 (conj tx-data [(op->diff op) e (encode/encode-keyword a) (wrap-type a v)]))))
+                               (let [[op e a v t] datum]
+                                 (conj tx-data [(op->diff op) e (encode/encode-keyword a) (wrap-type a v) t]))))
                            [] tx-data)]
      [{:Transact tx-data}])))
 
+(defmulti parse-output
+  (fn [x] (first (keys x))))
+
+(defmethod parse-output "Error" [result]
+  (let [[client error tx-id] (get result "Error")]
+    ["Error" (merge {"df.client" client} error {"df.tx-id" tx-id})]))
+
+(defmethod parse-output "Message" [result]
+  (let [[client value] (get result "Message")]
+    ["Message" (merge {"df.client" client} value)]))
+
+(defmethod parse-output "Json" [result]
+  (let [[query-name value time diff] (get result "Json")]
+     [query-name value time diff]))
+
+(defmethod parse-output "QueryDiff" [result]
+  (let [[query-name results] (get result "QueryDiff")
+        keywordize           (fn [v] (map keywordize-keys v))
+        result               (->> results
+                                  (map keywordize))]
+    [query-name result]))
+
 (defn parse-result
   [result]
-  (let [unwrap-tuple (fn [[tuple time diff :as result-diff]]
-                       (if (vector? tuple)
-                         [tuple time diff]
-                         result-diff))
-        xf-batch     (map unwrap-tuple)]
-    (let [[query_name results] (parse-json result)]
-      [query_name (into [] xf-batch results)])))
+  (parse-output (parse-json result)))
 
 (defrecord Connection [ws listeners query-listeners])
 
@@ -292,10 +310,22 @@
   (def conn (create-debug-conn! "ws://127.0.0.1:6262"))
 
   (def schema
-    {:loan/amount  {:db/valueType :Number}
-     :loan/from    {:db/valueType :String}
-     :loan/to      {:db/valueType :String}
-     :loan/over-50 {:db/valueType :Bool}})
+    {:loan/amount  (merge
+                    (of-type :Number)
+                    (input-semantics :db.semantics.cardinality/many)
+                    (tx-time))
+     :loan/from    (merge
+                    (of-type :String)
+                    (input-semantics :db.semantics.cardinality/many)
+                    (tx-time))
+     :loan/to      (merge
+                    (of-type :String)
+                    (input-semantics :db.semantics.cardinality/many)
+                    (tx-time))
+     :loan/over-50 (merge
+                    (of-type :Bool)
+                    (input-semantics :db.semantics.cardinality/many)
+                    (tx-time))})
   
   (def db (create-db schema))
 
@@ -330,10 +360,10 @@
    conn "loans>50"
    (fn [diffs]
      (println "executing rule loans>50" diffs)
-     (doseq [[[id amount] op] diffs]
+     (doseq [[[id amount] t op] diffs]
        (when (pos? op)
-         (exec! conn (transact db [[:db/retract id :loan/over-50 false]]))
-         (exec! conn (transact db [[:db/add id :loan/over-50 (> amount 50)]]))))))
+         (exec! conn (transact db [[:db/retract (encode/decode-value id) :loan/over-50 false]]))
+         (exec! conn (transact db [[:db/add (encode/decode-value id) :loan/over-50 (> (encode/decode-value amount) 50)]]))))))
 
   (exec! conn
     (transact db [{:db/id        2

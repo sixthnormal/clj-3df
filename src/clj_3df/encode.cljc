@@ -9,6 +9,15 @@
 (def encode-symbol (memoize (fn [sym] #?(:clj  (clojure.lang.RT/nextID)
                                          :cljs (swap! nextID inc)))))
 
+(defn decode-value [v]
+  (cond
+    (contains? v :String) (:String v)
+    (contains? v :Number) (:Number v)
+    (contains? v :Aid)    (keyword (:Aid v))
+    (contains? v :Bool)   (:String v)
+    (contains? v :Eid)    (:Eid v)
+    :else                 (throw (ex-info "Unknown value type" v))))
+
 (defn encode-value [v]
   (cond
     (string? v)  {:String v}
