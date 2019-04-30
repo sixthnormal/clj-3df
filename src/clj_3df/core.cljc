@@ -11,7 +11,7 @@
    [clojure.string :as str]
    [clojure.set :as set]
    [clj-3df.compiler :as compiler]
-   [clj-3df.attribute :as attribute]
+   [clj-3df.attribute :refer [of-type input-semantics tx-time]]
    [clj-3df.encode :as encode]))
 
 ;; HELPER
@@ -166,6 +166,8 @@
                      (case op
                        :db/add     1
                        :db/retract -1))
+         tx-time   (fn [t]
+                     (or (first t) nil))
          wrap-type (fn [a v]
                      (let [type (get-in schema [a :db/valueType] :db.type/unknown)]
                        (if (= type :db.type/unknown)
@@ -181,8 +183,8 @@
                                     (into tx-data))
 
                                (sequential? datum)
-                               (let [[op e a v] datum]
-                                 (conj tx-data [(op->diff op) e (encode/encode-keyword a) (wrap-type a v)]))))
+                               (let [[op e a v & t] datum]
+                                 (conj tx-data [(op->diff op) e (encode/encode-keyword a) (wrap-type a v) (tx-time t)]))))
                            [] tx-data)]
      [{:Transact tx-data}])))
 
@@ -306,10 +308,22 @@
   (def conn (create-debug-conn! "ws://127.0.0.1:6262"))
 
   (def schema
-    {:loan/amount  {:db/valueType :Number}
-     :loan/from    {:db/valueType :String}
-     :loan/to      {:db/valueType :String}
-     :loan/over-50 {:db/valueType :Bool}})
+    {:loan/amount  (merge
+                    (of-type :Number)
+                    (input-semantics :db.semantics.cardinality/many)
+                    (tx-time))
+     :loan/from    (merge
+                    (of-type :String)
+                    (input-semantics :db.semantics.cardinality/many)
+                    (tx-time))
+     :loan/to      (merge
+                    (of-type :String)
+                    (input-semantics :db.semantics.cardinality/many)
+                    (tx-time))
+     :loan/over-50 (merge
+                    (of-type :Bool)
+                    (input-semantics :db.semantics.cardinality/many)
+                    (tx-time))})
   
   (def db (create-db schema))
 
