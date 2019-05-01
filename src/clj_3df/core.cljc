@@ -74,9 +74,6 @@
 (defn uninterest [name]
   [{:Uninterest name}])
 
-(defn flow [source-name sink-name]
-  [{:Flow [source-name sink-name]}])
-
 (defn register [^DB db name plan rules]
   (let [;; @TODO expose this directly?
         ;; the top-level plan is just another rule...
@@ -107,11 +104,6 @@
 
 (defn register-source [source]
   [{:RegisterSource source}])
-
-(defn register-sink [name sink]
-  [{:RegisterSink
-    {:name name
-     :sink sink}}])
 
 (defn create-attribute
   "Creates a CreateAttribute command with the provided
