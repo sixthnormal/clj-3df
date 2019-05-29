@@ -8,7 +8,9 @@
 (defn of-type
   "Specifies the value type of an attribute."
   [value-type]
-  {:db/valueType value-type})
+  {:db/valueType    value-type
+   :query_support   "AdaptiveWCO"
+   :index_direction "Both"})
 
 (defn input-semantics
   [semantics]

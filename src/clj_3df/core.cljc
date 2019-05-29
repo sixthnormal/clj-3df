@@ -112,7 +112,7 @@
   [attr config]
   [{:CreateAttribute
     {:name   (encode/encode-keyword attr)
-     :config (merge (select-keys config [:input_semantics :trace_slack])
+     :config (merge (select-keys config [:input_semantics :trace_slack :index_direction :query_support])
                     {:timeless true})}}])
 
 (defn create-db-inputs [^DB db]
@@ -175,7 +175,7 @@
 
                                (sequential? datum)
                                (let [[op e a v t] datum]
-                                 (conj tx-data [(op->diff op) e (encode/encode-keyword a) (wrap-type a v) t]))))
+                                 (conj tx-data [(op->diff op) {:Eid e} (encode/encode-keyword a) (wrap-type a v) t]))))
                            [] tx-data)]
      [{:Transact tx-data}])))
 
