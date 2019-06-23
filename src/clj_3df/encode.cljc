@@ -2,7 +2,9 @@
   "Utilties for encoding query plans to something that the backend can
   understand. In particular, attributes and symbols will be encoded as
   integers."
-  (:require [clojure.string :as str]))
+  (:require
+   [clojure.string :as str]
+   [clj-uuid :as uuid]))
 
 (def nextID (atom 0))
 
@@ -20,10 +22,11 @@
 
 (defn encode-value [v]
   (cond
-    (string? v)  {:String v}
-    (number? v)  {:Number v}
-    (keyword? v) {:Aid (subs (str v) 1)}
-    (boolean? v) {:Bool v}))
+    (uuid/uuid? v) {:Uuid v}
+    (string? v)    {:String v}
+    (number? v)    {:Number v}
+    (keyword? v)   {:Aid (subs (str v) 1)}
+    (boolean? v)   {:Bool v}))
 
 (defn encode-keyword [kw]
   (subs (str kw) 1))
@@ -63,6 +66,8 @@
 
 (comment
 
+  (encode-value (uuid/v1))
+  
   (encode-keyword :name)
   (encode-keyword :person/name)
   

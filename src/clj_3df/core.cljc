@@ -175,7 +175,7 @@
 
                                (sequential? datum)
                                (let [[op e a v t] datum]
-                                 (conj tx-data [(op->diff op) {:Eid e} (encode/encode-keyword a) (wrap-type a v) t]))))
+                                 (conj tx-data [(op->diff op) (encode/encode-value e) (encode/encode-keyword a) (wrap-type a v) t]))))
                            [] tx-data)]
      [{:Transact tx-data}])))
 
