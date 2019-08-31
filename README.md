@@ -1,5 +1,7 @@
 # clj-3df
 
+[![Clojars Project](https://img.shields.io/clojars/v/com.sixthnormal/clj-3df.svg)](https://clojars.org/com.sixthnormal/clj-3df)
+
 **This is alpha-quality software, not feature-complete, and not yet
 ready for use in production services.**
 
