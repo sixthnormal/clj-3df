@@ -1,10 +1,8 @@
 (ns rga
   (:require
    [clojure.pprint :as pprint]
-   [clj-3df.core :refer [create-conn! create-db exec! query transact]]
-   [manifold.stream :as stream]
-   [manifold.bus :as bus])
-  (:gen-class))
+   [clj-3df.core :as d]
+   [clj-3df.attribute :as attribute]))
 
 ;; RGA
 ;; Datalog version of an ordered list CRDT, translated from Martin
@@ -13,12 +11,24 @@
 ;; https://speakerdeck.com/ept/data-structures-as-queries-expressing-crdts-using-datalog?slide=22
 
 (def schema
-  {:insert/after {:db/valueType :Eid}
-   :assign/elem  {:db/valueType :Eid}
-   :assign/value {:db/valueType :String}
-   :remove?      {:db/valueType :Bool}})
+  {:insert/after (merge
+                  (attribute/of-type :String)
+                  (attribute/input-semantics :db.semantics/raw)
+                  (attribute/tx-time))
+   :assign/elem  (merge
+                  (attribute/of-type :String)
+                  (attribute/input-semantics :db.semantics/raw)
+                  (attribute/tx-time))
+   :assign/value (merge
+                  (attribute/of-type :String)
+                  (attribute/input-semantics :db.semantics/raw)
+                  (attribute/tx-time))
+   :remove?      (merge
+                  (attribute/of-type :Bool)
+                  (attribute/input-semantics :db.semantics/raw)
+                  (attribute/tx-time))})
 
-(def db (create-db schema))
+(def db (d/create-db schema))
 
 (def rules
   '[[(has-child? ?parent) [?wc :insert/after ?parent]]
@@ -103,11 +113,14 @@
 ;; test
 
 (defn -main []
-  (def conn (create-conn! "ws://127.0.0.1:6262"))
-  (stream/consume #(pprint/pprint %) (bus/subscribe (:out conn) :out))
-
+  (def conn
+    (d/create-debug-conn! "ws://127.0.0.1:6262"))
+  
   (exec! conn
-    (query db "RGA" q rules)
+    (d/create-db-inputs db)) 
+  
+  (exec! conn
+    (d/query db "RGA" q rules)
     ;; (query db "q_-id" q1 rules)
     ;; (query db "q_current-value" q2 rules)
     ;; (query db "q_next-visible" q3 rules)
@@ -116,25 +129,26 @@
     )
 
   (exec! conn
-    (transact db [[:db/add [1 0] :insert/after [0 0]]
-                  [:db/add [2 0] :insert/after [0 0]]
-                  [:db/add [3 0] :insert/after [2 0]]
-                  [:db/add [4 0] :insert/after [1 0]]
-                  [:db/add [5 0] :insert/after [2 0]]
-                  [:db/add [6 0] :insert/after [2 0]]])
-    (transact db [{:db/id [0 1] :assign/elem [0 0] :assign/value "-"}
-                  {:db/id [2 1] :assign/elem [2 0] :assign/value "H"}
-                  {:db/id [6 1] :assign/elem [6 0] :assign/value "e"}
-                  {:db/id [6 2] :assign/elem [6 0] :assign/value "i"}
-                  [:db/add [6 2] :remove? true]
-                  {:db/id [5 1] :assign/elem [5 0] :assign/value "l"}
-                  [:db/add [5 1] :remove? true]
-                  {:db/id [5 3] :assign/elem [5 0] :assign/value "y"}
-                  {:db/id [3 1] :assign/elem [3 0] :assign/value "l"}
-                  [:db/add [3 1] :remove? true]
-                  {:db/id [1 1] :assign/elem [1 0] :assign/value "o"}
-                  {:db/id [1 2] :assign/elem [1 0] :assign/value "i"}
-                  [:db/add [1 1] :remove? true]
-                  [:db/add [1 2] :remove? true]
-                  {:db/id [4 1] :assign/elem [4 0] :assign/value "!"}
-                  {:db/id [4 2] :assign/elem [4 0] :assign/value "?"}])))
+    (d/transact db [[:db/add "[1 0]" :insert/after "[0 0]"]
+                    [:db/add "[2 0]" :insert/after "[0 0]"]
+                    [:db/add "[3 0]" :insert/after "[2 0]"]
+                    [:db/add "[4 0]" :insert/after "[1 0]"]
+                    [:db/add "[5 0]" :insert/after "[2 0]"]
+                    [:db/add "[6 0]" :insert/after "[2 0]"]])
+    (d/transact db [{:db/id "[0 1]" :assign/elem "[0 0]" :assign/value "-"}
+                    {:db/id "[2 1]" :assign/elem "[2 0]" :assign/value "H"}
+                    {:db/id "[6 1]" :assign/elem "[6 0]" :assign/value "e"}
+                    {:db/id "[6 2]" :assign/elem "[6 0]" :assign/value "i"}
+                    [:db/add "[6 2]" :remove? true]
+                    {:db/id "[5 1]" :assign/elem "[5 0]" :assign/value "l"}
+                    [:db/add "[5 1]" :remove? true]
+                    {:db/id "[5 3]" :assign/elem "[5 0]" :assign/value "y"}
+                    {:db/id "[3 1]" :assign/elem "[3 0]" :assign/value "l"}
+                    [:db/add "[3 1]" :remove? true]
+                    {:db/id "[1 1]" :assign/elem "[1 0]" :assign/value "o"}
+                    {:db/id "[1 2]" :assign/elem "[1 0]" :assign/value "i"}
+                    [:db/add "[1 1]" :remove? true]
+                    [:db/add "[1 2]" :remove? true]
+                    {:db/id "[4 1]" :assign/elem "[4 0]" :assign/value "!"}
+                    {:db/id "[4 2]" :assign/elem "[4 0]" :assign/value "?"}]))
+  )
