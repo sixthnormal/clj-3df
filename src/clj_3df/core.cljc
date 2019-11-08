@@ -1,5 +1,5 @@
 (ns clj-3df.core
-  (:refer-clojure :exclude [resolve])
+  (:refer-clojure :exclude [resolve derive])
   (:require
    #?(:clj  [clojure.spec.alpha :as s]
       :cljs [cljs.spec.alpha :as s])
@@ -67,6 +67,12 @@
 
 (defn create-db [schema]
   (->DB schema (rschema schema) 0))
+
+(defn derive [namespace query]
+  [{:Derive [namespace query]}])
+
+(defn subscribe [aid]
+  [{:Subscribe aid}])
 
 (defn interest [name]
   [{:Interest {:name name}}])
